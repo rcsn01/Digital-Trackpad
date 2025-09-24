@@ -1,0 +1,36 @@
+/* Minimal styles for a full-screen trackpad with touch feedback */
+html, body {
+    height: 100%;
+    margin: 0;
+    background: #ffffff;
+    overscroll-behavior: none; /* prevent browser page scroll/refresh on touch */
+}
+
+#trackpad {
+    width: 100vw;
+    height: 100vh;
+    touch-action: none;
+    overscroll-behavior: contain; /* keep scroll gestures within the element */
+    -webkit-user-select: none;
+    user-select: none;
+    background: #ffffff;
+    position: relative;
+    overflow: hidden;
+}
+
+.touch-feedback {
+    position: absolute;
+    width: 36px;
+    height: 36px;
+    margin-left: -18px;
+    margin-top: -18px;
+    background: rgba(255,255,255,0.9);
+    border-radius: 50%;
+    pointer-events: none;
+    animation: touchFeedback 300ms ease-out forwards;
+}
+
+@keyframes touchFeedback {
+    from { transform: scale(0.3); opacity: 1; }
+    to   { transform: scale(1.0); opacity: 0; }
+}

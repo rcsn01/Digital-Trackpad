@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <title>Trackpad</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Minimal inline safety styles to ensure full-screen trackpad if external CSS missing */
+        html, body { height: 100%; margin: 0; }
+        #trackpad { width: 100vw; height: 100vh; touch-action: none; }
+    </style>
+</head>
+<body>
+    <div id="trackpad" aria-label="Trackpad"></div>
+    <!-- socket.io client (served by Flask-SocketIO) -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
