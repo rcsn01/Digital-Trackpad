@@ -2,7 +2,7 @@
 html, body {
     height: 100%;
     margin: 0;
-    background: #ffffff;
+    background: #000000;
     overscroll-behavior: none; /* prevent browser page scroll/refresh on touch */
 }
 
@@ -13,7 +13,7 @@ html, body {
     overscroll-behavior: contain; /* keep scroll gestures within the element */
     -webkit-user-select: none;
     user-select: none;
-    background: #ffffff;
+    background: #000000;
     position: relative;
     overflow: hidden;
 }
@@ -33,4 +33,53 @@ html, body {
 @keyframes touchFeedback {
     from { transform: scale(0.3); opacity: 1; }
     to   { transform: scale(1.0); opacity: 0; }
+}
+
+/* Keyboard toggle button (bottom-right) */
+#kbToggle {
+    position: fixed;
+    right: 16px;
+    bottom: 18px;
+    z-index: 1000;
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    border: none;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    font-size: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+#kbToggle:active { transform: translateY(1px); }
+
+/* Visible input overlay (optional when we want a visible input) */
+#kbOverlayInput {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 86px;
+    z-index: 1000;
+    background: rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #fff;
+}
+
+/* Hidden but focusable input used to trigger mobile keyboards */
+#kbInput {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 86px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    border: none;
+    background: transparent;
+    color: transparent;
+    caret-color: transparent; /* hide caret */
 }

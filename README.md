@@ -39,6 +39,28 @@ Or access locally at: http://localhost:5000
 Screen size detected: 1920x1080
 ```
 
+## Multi-monitor support
+
+The server now supports multiple monitors on Windows by using the system's virtual
+screen bounds. This means the cursor should be able to move across all connected
+displays (including monitors positioned to the left of the primary) instead of
+being clamped to the primary monitor.
+
+Notes and testing:
+- On Windows the server queries the virtual screen using the Win32
+	GetSystemMetrics API so no additional configuration is required.
+- On other platforms the server currently falls back to the primary monitor
+	dimensions reported by PyAutoGUI.
+- To test: run the server, open the trackpad page on your phone or another
+	device, and move the pointer toward the edges of your setup. The cursor
+	should travel onto other monitors if your OS reports them in the virtual
+	screen area.
+
+If you find the cursor still cannot move across monitors, please confirm your
+OS exposes the extended desktop as a single virtual screen (common on Windows)
+and share the output of the server startup message which prints the detected
+virtual screen bounds.
+
 ### 3. Connect Your Phone
 
 1. Make sure your phone is connected to the same Wi-Fi network as your PC

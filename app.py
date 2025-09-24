@@ -1,63 +1,220 @@
 from flask import Flask, render_template, request, jsonify
+import os
+import sys
 import pyautogui
 import threading
 import time
 import math
+import platform
+
+# On Windows we can query the virtual screen bounds so the cursor can move across
+# multiple monitors. Fall back to primary monitor size on other platforms.
+virtual_left = 0
+virtual_top = 0
+screen_width = 0
+screen_height = 0
 
 # WebSocket support
 from flask_socketio import SocketIO
 
-app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins='*')
+# Support running from a PyInstaller one-file/one-folder bundle by resolving
+# the runtime base directory. When bundled, PyInstaller exposes a temporary
+# extraction dir at sys._MEIPASS where data files are placed.
+base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+app = Flask(__name__, static_folder=os.path.join(base_dir, 'static'), template_folder=os.path.join(base_dir, 'templates'))
+import traceback
+
+# Try to initialize SocketIO with a list of candidate async modes. If none
+# succeed (common when the bundled environment is missing or incompatible
+# async libraries), fall back to a lightweight stub that preserves the
+# decorator API but runs a plain Flask HTTP server. This keeps the app
+# functional (HTTP endpoints work) even when real WebSocket support isn't
+# available inside a packaged exe.
+socketio = None
+async_candidates = ['eventlet', 'gevent', 'threading', 'asyncio']
+for mode in async_candidates:
+    try:
+        socketio = SocketIO(app, cors_allowed_origins='*', async_mode=mode)
+        print(f"SocketIO initialized with async_mode={mode}")
+        break
+    except Exception as e:
+        print(f"SocketIO init failed for async_mode={mode}: {e}")
+        traceback.print_exc()
+
+if socketio is None:
+    print('Warning: Unable to initialize a real SocketIO backend. Falling back to HTTP-only stub (no websockets).')
+    class StubSocketIO:
+        def on(self, *args, **kwargs):
+            # return a decorator that leaves the function unchanged
+            def decorator(f):
+                return f
+            return decorator
+        def emit(self, *args, **kwargs):
+            return None
+        def run(self, app, host='0.0.0.0', port=5000, debug=False):
+            # Run plain Flask server
+            app.run(host=host, port=port, debug=debug)
+    socketio = StubSocketIO()
 
 # Configure pyautogui
 pyautogui.FAILSAFE = True  # Move mouse to corner to stop
 pyautogui.PAUSE = 0.001   # Small pause between commands
 
 # Server-side multiplier for incoming fractional scroll values. Increase if scroll feels weak.
-SCROLL_MULTIPLIER = 0.1
+SCROLL_MULTIPLIER = 2
+# Server-side multiplier for incoming move deltas. Increase to amplify movement,
+# decrease to make movement less sensitive. Client already applies sensitivity,
+# but a server multiplier lets the server globally tune responsiveness.
+MOVE_MULTIPLIER = 3
 # Toggle to print incoming scroll payloads (for troubleshooting); set False to silence
 SCROLL_DEBUG = False
 # If accumulated fractional scroll (after multiplying) exceeds this small value,
 # force one wheel step in the appropriate direction. Helps small gestures move the page.
 MIN_SCROLL_FRAC_TO_STEP = 0.05
+# Accumulators and threshold for move deltas (so tiny client movements still result
+# in eventual mouse movement). Works like scroll accumulators: we store fractional
+# pixels until they add up to at least one pixel, or a small fractional threshold
+# triggers a minimal one-pixel step.
+move_accum_x = 0.0
+move_accum_y = 0.0
+move_lock = threading.Lock()
+# If fractional accumulated move exceeds this, force a one-pixel move
+MIN_MOVE_FRAC_TO_STEP = 0.05
+# Tap detection thresholds (server-side)
+TAP_TIMEOUT_MS = 200
+TAP_MOVE_THRESHOLD = 4.0
+# Speed-based scroll acceleration: larger finger deltas produce proportionally
+# larger scroll amounts. Tune these constants to taste.
+# SCROLL_ACCEL_FACTOR multiplies the effect of the measured delta magnitude.
+# SCROLL_ACCEL_CAP prevents runaway amplification from noisy very large deltas.
+SCROLL_ACCEL_FACTOR = 2
+SCROLL_ACCEL_CAP = 2000.0
+# Double-tap-and-hold safety: if a held mouseDown is not released by the client
+# within this timeout, the server will auto-release to avoid a stuck mouse state.
+DOUBLE_TAP_HOLD_TIMEOUT_MS = 3000
+# Double-tap timing: max interval between taps and hold trigger duration
+DOUBLE_TAP_MAX_INTERVAL_MS = 400
+DOUBLE_TAP_HOLD_TRIGGER_MS = 200
 
-# Get screen size for scaling
-screen_width, screen_height = pyautogui.size()
+# Get screen size for scaling. Prefer virtual screen on Windows so multiple
+# monitors are supported.
+def detect_screen_bounds():
+    global virtual_left, virtual_top, screen_width, screen_height
+    try:
+        if platform.system() == 'Windows':
+            # Use Win32 GetSystemMetrics for virtual screen bounds
+            import ctypes
+            user32 = ctypes.windll.user32
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+            virtual_left = int(user32.GetSystemMetrics(SM_XVIRTUALSCREEN))
+            virtual_top = int(user32.GetSystemMetrics(SM_YVIRTUALSCREEN))
+            screen_width = int(user32.GetSystemMetrics(SM_CXVIRTUALSCREEN))
+            screen_height = int(user32.GetSystemMetrics(SM_CYVIRTUALSCREEN))
+        else:
+            # Non-Windows: fall back to pyautogui primary screen size and origin 0,0
+            virtual_left = 0
+            virtual_top = 0
+            w, h = pyautogui.size()
+            screen_width = int(w)
+            screen_height = int(h)
+    except Exception:
+        # Last-resort fallback
+        virtual_left = 0
+        virtual_top = 0
+        w, h = pyautogui.size()
+        screen_width = int(w)
+        screen_height = int(h)
+
+
+# Initialize screen bounds
+detect_screen_bounds()
 
 # Accumulators to buffer fractional scrolls so very small client deltas still result in scrolling
 scroll_accum_x = 0.0
 scroll_accum_y = 0.0
 scroll_lock = threading.Lock()
 
+
+def _try_hscroll(amount):
+    """Try a native horizontal scroll; fall back to shift+vertical scroll if unavailable."""
+    try:
+        pyautogui.hscroll(int(amount))
+    except Exception:
+        try:
+            if amount > 0:
+                pyautogui.keyDown('shift')
+                pyautogui.scroll(int(abs(amount)))
+                pyautogui.keyUp('shift')
+            else:
+                pyautogui.keyDown('shift')
+                pyautogui.scroll(-int(abs(amount)))
+                pyautogui.keyUp('shift')
+        except Exception as e:
+            print('_try_hscroll error', e)
+
+
+def _press_key_combo(mods, key):
+    """Press modifier keys + a key. Try pyautogui first, then a Windows ctypes fallback.
+
+    mods: list of modifier names such as ['winleft'] or ['alt']
+    key: single key name like 'tab' or 'esc'
+    """
+    try:
+        for m in mods:
+            pyautogui.keyDown(m)
+        pyautogui.press(key)
+        for m in reversed(mods):
+            pyautogui.keyUp(m)
+    except Exception:
+        # Windows fallback using keybd_event for common keys
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            vk_map = {'winleft': 0x5B, 'alt': 0x12}
+            key_map = {'tab': 0x09, 'esc': 0x1B}
+            # press modifiers
+            for m in mods:
+                vk = vk_map.get(m)
+                if vk:
+                    user32.keybd_event(vk, 0, 0, 0)
+            # press key
+            k = key_map.get(key)
+            if k:
+                user32.keybd_event(k, 0, 0, 0)
+                user32.keybd_event(k, 0, 2, 0)
+            # release modifiers
+            for m in reversed(mods):
+                vk = vk_map.get(m)
+                if vk:
+                    user32.keybd_event(vk, 0, 2, 0)
+        except Exception as e:
+            print('_press_key_combo fallback failed', e)
+
+
+def _press_single_key(key):
+    """Press a single key, with ctypes fallback for Windows."""
+    try:
+        pyautogui.press(key)
+    except Exception:
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            key_map = {'esc': 0x1B, 'tab': 0x09}
+            k = key_map.get(key)
+            if k:
+                user32.keybd_event(k, 0, 0, 0)
+                user32.keybd_event(k, 0, 2, 0)
+        except Exception as e:
+            print('_press_single_key fallback failed', e)
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/move', methods=['POST'])
-def move_mouse():
-    try:
-        data = request.json
-        delta_x = float(data.get('deltaX', 0))
-        delta_y = float(data.get('deltaY', 0))
-        
-        # Get current mouse position
-        current_x, current_y = pyautogui.position()
-        
-        # Client-side should apply sensitivity. Server applies raw deltas.
-        new_x = current_x + delta_x
-        new_y = current_y + delta_y
-        
-        # Ensure mouse stays within screen bounds
-        new_x = max(0, min(screen_width - 1, new_x))
-        new_y = max(0, min(screen_height - 1, new_y))
-        
-        # Move mouse
-        pyautogui.moveTo(new_x, new_y)
-        
-        return jsonify({'status': 'success'})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)})
+
 
 @app.route('/click', methods=['POST'])
 def click_mouse():
@@ -111,34 +268,12 @@ def scroll_mouse():
                 scroll_accum_x += scroll_x * SCROLL_MULTIPLIER
                 scroll_amount_x = int(scroll_accum_x)
                 if scroll_amount_x != 0:
-                    try:
-                        # Some PyAutoGUI versions expose hscroll
-                        pyautogui.hscroll(scroll_amount_x)
-                    except Exception:
-                        # Fallback: use shift+vertical scroll to emulate horizontal scroll
-                        if scroll_amount_x > 0:
-                            pyautogui.keyDown('shift')
-                            pyautogui.scroll(int(abs(scroll_amount_x)))
-                            pyautogui.keyUp('shift')
-                        else:
-                            pyautogui.keyDown('shift')
-                            pyautogui.scroll(-int(abs(scroll_amount_x)))
-                            pyautogui.keyUp('shift')
+                    _try_hscroll(scroll_amount_x)
                     scroll_accum_x -= scroll_amount_x
                 else:
                     if abs(scroll_accum_x) >= MIN_SCROLL_FRAC_TO_STEP:
                         step_x = int(math.copysign(1, scroll_accum_x))
-                        try:
-                            pyautogui.hscroll(step_x)
-                        except Exception:
-                            if step_x > 0:
-                                pyautogui.keyDown('shift')
-                                pyautogui.scroll(int(abs(step_x)))
-                                pyautogui.keyUp('shift')
-                            else:
-                                pyautogui.keyDown('shift')
-                                pyautogui.scroll(-int(abs(step_x)))
-                                pyautogui.keyUp('shift')
+                        _try_hscroll(step_x)
                         scroll_accum_x -= step_x
         
         return jsonify({'status': 'success'})
@@ -146,20 +281,7 @@ def scroll_mouse():
         return jsonify({'status': 'error', 'message': str(e)})
 
 
-# SocketIO handlers - lower-latency path (client will emit these when connected)
-@socketio.on('move')
-def on_move(data):
-    try:
-        dx = float(data.get('deltaX', 0))
-        dy = float(data.get('deltaY', 0))
-        current_x, current_y = pyautogui.position()
-        new_x = current_x + dx
-        new_y = current_y + dy
-        new_x = max(0, min(screen_width - 1, new_x))
-        new_y = max(0, min(screen_height - 1, new_y))
-        pyautogui.moveTo(new_x, new_y)
-    except Exception as e:
-        print('on_move error', e)
+
 
 
 @socketio.on('click')
@@ -193,6 +315,12 @@ def on_scroll(data):
                 if scroll_amount != 0:
                     pyautogui.scroll(scroll_amount)
                     scroll_accum_y -= scroll_amount
+                else:
+                    # If fractional accumulation is significant, send a minimal step
+                    if abs(scroll_accum_y) >= MIN_SCROLL_FRAC_TO_STEP:
+                        step = int(math.copysign(1, scroll_accum_y))
+                        pyautogui.scroll(step)
+                        scroll_accum_y -= step
 
         # Accumulate horizontal fractional scrolls
         if scroll_x != 0:
@@ -215,6 +343,589 @@ def on_scroll(data):
                     scroll_accum_x -= scroll_amount_x
     except Exception as e:
         print('on_scroll error', e)
+
+
+# Per-connection touch state for raw events
+touch_state = {}
+
+
+def process_move_delta(delta_x, delta_y):
+    """Apply a raw delta (in client pixels) to the host mouse using server-side
+    accumulation, multiplier, and virtual-screen clamping.
+    """
+    try:
+        dx_apply = 0
+        dy_apply = 0
+        with move_lock:
+            global move_accum_x, move_accum_y
+            move_accum_x += float(delta_x) * MOVE_MULTIPLIER
+            move_accum_y += float(delta_y) * MOVE_MULTIPLIER
+
+            step_x = int(move_accum_x)
+            step_y = int(move_accum_y)
+
+            if step_x != 0:
+                dx_apply = step_x
+                move_accum_x -= step_x
+            else:
+                if abs(move_accum_x) >= MIN_MOVE_FRAC_TO_STEP:
+                    step = int(math.copysign(1, move_accum_x))
+                    dx_apply = step
+                    move_accum_x -= step
+
+            if step_y != 0:
+                dy_apply = step_y
+                move_accum_y -= step_y
+            else:
+                if abs(move_accum_y) >= MIN_MOVE_FRAC_TO_STEP:
+                    step = int(math.copysign(1, move_accum_y))
+                    dy_apply = step
+                    move_accum_y -= step
+
+        if dx_apply != 0 or dy_apply != 0:
+            current_x, current_y = pyautogui.position()
+            new_x = current_x + dx_apply
+            new_y = current_y + dy_apply
+            # Clamp to virtual screen bounds
+            new_x = max(virtual_left, min(virtual_left + screen_width - 1, new_x))
+            new_y = max(virtual_top, min(virtual_top + screen_height - 1, new_y))
+            pyautogui.moveTo(new_x, new_y)
+    except Exception as e:
+        print('process_move_delta error', e)
+
+
+# Raw input handlers - client emits raw.down, raw.move, raw.up (coalesced moves supported)
+def _get_sid_for_http():
+    # Use client IP as a stable key for HTTP fallback clients (so successive
+    # /raw posts from the same device share state). If remote_addr is unavailable
+    # fall back to a generic 'http' key.
+    try:
+        addr = request.remote_addr or 'unknown'
+        return f'http:{addr}'
+    except Exception:
+        return 'http:unknown'
+
+
+def process_raw_down(data, sid_key):
+    try:
+        st = touch_state.setdefault(sid_key, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None, 'lastTapTime': 0, 'pendingDoubleTap': False})
+        # Clear any stale pending double-tap marker
+        now_ms = time.time() * 1000
+        if st.get('pendingDoubleTap') and (now_ms - st.get('lastTapTime', 0) > DOUBLE_TAP_MAX_INTERVAL_MS):
+            st['pendingDoubleTap'] = False
+
+        # If a pending double-tap exists and this down occurs quickly after the last tap,
+        # treat this as the second tap's down; enter the "expect hold to start drag" state.
+        if st.get('pendingDoubleTap') and (now_ms - st.get('lastTapTime', 0) <= DOUBLE_TAP_MAX_INTERVAL_MS):
+            st['pendingDoubleTap'] = False
+            st['doubleTapExpectHold'] = True
+            st['doubleTapDownTime'] = now_ms
+        tid = data.get('id')
+        x = float(data.get('x', 0))
+        y = float(data.get('y', 0))
+        now = time.time() * 1000
+        # Track per-touch recent deltas so two-finger scroll can use recent
+        # movement instead of a cumulative start->last value which would
+        # otherwise be re-applied repeatedly.
+        st['touches'][tid] = {'lastX': x, 'lastY': y, 'startX': x, 'startY': y, 'startTime': now, 'hasMoved': False, 'totalDistance': 0.0, 'lastDeltaX': 0.0, 'lastDeltaY': 0.0}
+        # Record how many touches were active at down time (used to decide click type)
+        try:
+            st['touches'][tid]['touchCountAtDown'] = len(st['touches'])
+        except Exception:
+            st['touches'][tid]['touchCountAtDown'] = 1
+    except Exception as e:
+        print('process_raw_down error', e)
+
+
+def process_raw_move(data, sid_key):
+    try:
+        st = touch_state.setdefault(sid_key, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None, 'lastTapTime': 0, 'pendingDoubleTap': False})
+        tid = data.get('id')
+        x = float(data.get('x', 0))
+        y = float(data.get('y', 0))
+        # Update touch
+        touch = st['touches'].get(tid)
+        dx = dy = 0.0
+        if touch:
+            dx = x - touch['lastX']
+            dy = y - touch['lastY']
+            dist = math.hypot(dx, dy)
+            touch['lastX'] = x
+            touch['lastY'] = y
+            touch['totalDistance'] += dist
+            # store recent per-touch deltas for multi-touch gesture aggregation
+            touch['lastDeltaX'] = dx
+            touch['lastDeltaY'] = dy
+            if touch['totalDistance'] > 4:
+                touch['hasMoved'] = True
+
+        # Auto-release stale double-tap-hold to avoid stuck mouseDown state
+        try:
+            now_check = time.time() * 1000
+            if st.get('doubleTapHoldActive') and st.get('lastMouseDownTime', 0) and (now_check - st.get('lastMouseDownTime', 0) > DOUBLE_TAP_HOLD_TIMEOUT_MS):
+                try:
+                    pyautogui.mouseUp()
+                except Exception:
+                    pass
+                st['doubleTapHoldActive'] = False
+                st['lastMouseDownTime'] = 0
+        except Exception:
+            pass
+
+        # If the client initiated a double-tap and we're expecting the second-tap hold,
+        # check whether the hold threshold has been crossed and start dragging (mouseDown).
+        try:
+            now_ms = time.time() * 1000
+            if st.get('doubleTapExpectHold') and st.get('doubleTapDownTime', 0):
+                if (now_ms - st.get('doubleTapDownTime', 0)) >= DOUBLE_TAP_HOLD_TRIGGER_MS:
+                    try:
+                        pyautogui.mouseDown()
+                    except Exception:
+                        pass
+                    st['doubleTapHoldActive'] = True
+                    st['lastMouseDownTime'] = now_ms
+                    st['lastMouseDownSid'] = sid_key
+                    st['doubleTapExpectHold'] = False
+        except Exception:
+            pass
+
+        # If we've recently opened a context menu via right-click, ignore
+        # tiny movements for a short window so the menu doesn't close
+        # immediately due to a micro-move generated by the touch hardware.
+        try:
+            now_ms = time.time() * 1000
+            if st.get('suppressMoveUntil', 0) > now_ms:
+                # clear per-touch deltas so nothing is applied
+                if touch:
+                    touch['lastDeltaX'] = 0.0
+                    touch['lastDeltaY'] = 0.0
+                return
+        except Exception:
+            pass
+
+        # Decide behavior based on active touch count
+        n = len(st['touches'])
+        if n == 1:
+            # single-finger -> cursor move
+            process_move_delta(dx, dy)
+        elif n == 2:
+            # two-finger -> scroll; aggregate the recent per-touch vertical deltas
+            # (lastDeltaY) so we don't repeatedly re-apply a cumulative start->last
+            # distance on every move event. After consuming the deltas we zero them
+            # so each delta is applied only once.
+            totalDelta = 0.0
+            count = 0
+            for td in st['touches'].values():
+                totalDelta += td.get('lastDeltaY', 0.0)
+                count += 1
+            if count:
+                avgDy = totalDelta / float(count)
+                # Compute a simple speed metric: average absolute delta magnitude
+                # across touches. Larger deltas mean a faster swipe.
+                speed = 0.0
+                for td in st['touches'].values():
+                    speed += abs(td.get('lastDeltaY', 0.0))
+                speed = speed / float(count)
+
+                # Apply acceleration multiplier based on speed. Cap to avoid
+                # excessive jumps from noisy input.
+                accel = 1.0 + min(SCROLL_ACCEL_CAP, speed) * SCROLL_ACCEL_FACTOR
+
+                scroll_val = -avgDy * SCROLL_MULTIPLIER * accel
+                with scroll_lock:
+                    global scroll_accum_y
+                    scroll_accum_y += scroll_val
+                    scroll_amount = int(scroll_accum_y)
+                    if scroll_amount != 0:
+                        pyautogui.scroll(scroll_amount)
+                        scroll_accum_y -= scroll_amount
+                    else:
+                        if abs(scroll_accum_y) >= MIN_SCROLL_FRAC_TO_STEP:
+                            step = int(math.copysign(1, scroll_accum_y))
+                            pyautogui.scroll(step)
+                            scroll_accum_y -= step
+                # zero out consumed per-touch deltas so they aren't re-used
+                for td in st['touches'].values():
+                    td['lastDeltaY'] = 0.0
+        elif n == 3:
+            # three-finger gesture: detect vertical average to trigger task view actions
+            avgDeltaY = 0.0
+            count = 0
+            for k, td in st['touches'].items():
+                avgDeltaY += (td['lastY'] - td['startY'])
+                count += 1
+            if count:
+                avgDeltaY /= count
+                st['threeFingerAccumY'] += -avgDeltaY
+                if not st['threeFingerTriggeredUp'] and st['threeFingerAccumY'] >= 12:
+                    st['threeFingerTriggeredUp'] = True
+                    try:
+                        _press_key_combo(['winleft'], 'tab')
+                    except Exception:
+                        pass
+                if not st['threeFingerTriggeredDown'] and st['threeFingerAccumY'] <= -12:
+                    st['threeFingerTriggeredDown'] = True
+                    try:
+                        _press_single_key('esc')
+                    except Exception:
+                        pass
+    except Exception as e:
+        print('process_raw_move error', e)
+
+
+def process_raw_up(data, sid_key):
+    try:
+        st = touch_state.setdefault(sid_key, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None, 'lastTapTime': 0, 'pendingDoubleTap': False})
+        tid = data.get('id')
+        # If touch exists, determine if it was a tap (short duration, little movement)
+        touch = st['touches'].get(tid)
+        if touch:
+            duration = (time.time() * 1000) - float(touch.get('startTime', 0))
+            moved = touch.get('hasMoved', False)
+            total_dist = touch.get('totalDistance', 0.0)
+            # Consider it a tap if it didn't move much and was quick
+            if (not moved or total_dist <= TAP_MOVE_THRESHOLD) and duration <= TAP_TIMEOUT_MS:
+                now_ms = time.time() * 1000
+                # If we were expecting the second tap's hold but the user released before
+                # the hold threshold, treat this as a double-click and clear the expect flag.
+                if st.get('doubleTapExpectHold'):
+                    try:
+                        pyautogui.doubleClick()
+                    except Exception:
+                        pass
+                    st['doubleTapExpectHold'] = False
+                    st['pendingDoubleTap'] = False
+                    st['lastTapTime'] = 0
+                    # remove touch and return early
+                    if tid in st['touches']:
+                        del st['touches'][tid]
+                    return
+                # Decide click type by number of fingers that started the touch
+                count = int(touch.get('touchCountAtDown', 1))
+                try:
+                    if count == 1:
+                        pyautogui.click()
+                        # mark this as a tap that could become the first half of a double-tap
+                        st['lastTapTime'] = now_ms
+                        st['pendingDoubleTap'] = True
+                    elif count == 2:
+                        pyautogui.rightClick()
+                        # suppress tiny moves after right-click to avoid closing context menu
+                        st['suppressMoveUntil'] = time.time() * 1000 + 300
+                    else:
+                        pyautogui.middleClick()
+                except Exception:
+                    pass
+        # Remove touch state
+        if tid in st['touches']:
+            del st['touches'][tid]
+        if len(st['touches']) < 3:
+            st['threeFingerAccumY'] = 0.0
+            st['threeFingerTriggeredUp'] = False
+            st['threeFingerTriggeredDown'] = False
+        if st.get('doubleTapHoldActive') and len(st['touches']) == 0:
+            try:
+                pyautogui.mouseUp()
+            except Exception:
+                pass
+            # clear the hold flag after releasing
+            st['doubleTapHoldActive'] = False
+            st['lastMouseDownTime'] = 0
+    except Exception as e:
+        print('process_raw_up error', e)
+
+
+@socketio.on('raw.down')
+def on_raw_down_socket(data):
+    try:
+        sid = request.sid
+        process_raw_down(data, sid)
+    except Exception as e:
+        print('on_raw_down error', e)
+
+
+@socketio.on('raw.move')
+def on_raw_move_socket(data):
+    try:
+        sid = request.sid
+        process_raw_move(data, sid)
+    except Exception as e:
+        print('on_raw_move error', e)
+
+
+@socketio.on('raw.up')
+def on_raw_up_socket(data):
+    try:
+        sid = request.sid
+        process_raw_up(data, sid)
+    except Exception as e:
+        print('on_raw_up error', e)
+
+
+# Log socket connections for debugging
+@socketio.on('connect')
+def on_client_connect():
+    try:
+        sid = request.sid
+        transport = None
+        try:
+            transport = request.environ.get('wsgi.websocket') is not None and 'websocket' or None
+        except Exception:
+            transport = None
+        print(f"Socket connected: sid={sid}")
+    except Exception as e:
+        print('connect handler error', e)
+
+
+@socketio.on('disconnect')
+def on_client_disconnect():
+    try:
+        sid = request.sid
+        print(f"Socket disconnected: sid={sid}")
+    except Exception as e:
+        print('disconnect handler error', e)
+
+
+@app.route('/raw', methods=['POST'])
+def raw_http():
+    try:
+        data = request.json
+        events = data if isinstance(data, list) else [data]
+        sid_key = _get_sid_for_http()
+        for ev in events:
+            etype = ev.get('type')
+            if etype == 'down':
+                process_raw_down(ev, sid_key)
+            elif etype == 'move':
+                process_raw_move(ev, sid_key)
+            elif etype == 'up':
+                process_raw_up(ev, sid_key)
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+# Handle Task View (Win+Tab) triggered by client three-finger gesture
+@socketio.on('taskview')
+def on_taskview(data):
+    try:
+        # On Windows send Win+Tab; pyautogui.hotkey('winleft', 'tab') works
+        if platform.system() == 'Windows':
+            try:
+                _press_key_combo(['winleft'], 'tab')
+            except Exception:
+                try:
+                    _press_key_combo(['winleft'], 'tab')
+                except Exception as e:
+                    print('taskview fallback failed', e)
+        else:
+            # Non-Windows: attempt Alt+Tab as a reasonable default
+            try:
+                _press_key_combo(['alt'], 'tab')
+            except Exception:
+                pass
+    except Exception as e:
+        print('on_taskview error', e)
+
+
+@app.route('/taskview', methods=['POST'])
+def taskview():
+    try:
+        # Mirror socket behavior for HTTP fallback
+        if platform.system() == 'Windows':
+            try:
+                _press_key_combo(['winleft'], 'tab')
+            except Exception:
+                try:
+                    _press_key_combo(['winleft'], 'tab')
+                except Exception as e:
+                    print('taskview fallback failed', e)
+        else:
+            try:
+                _press_key_combo(['alt'], 'tab')
+            except Exception:
+                pass
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+# Handle exiting Task View (e.g., three-finger swipe down -> send Esc)
+@socketio.on('taskview_exit')
+def on_taskview_exit(data):
+    try:
+        # Send Escape to exit Task View; also ensure modifier keys are released
+        try:
+            _press_single_key('esc')
+        except Exception:
+            try:
+                _press_single_key('esc')
+            except Exception as e:
+                print('taskview_exit fallback failed', e)
+    except Exception as e:
+        print('on_taskview_exit error', e)
+
+
+@app.route('/taskview_exit', methods=['POST'])
+def taskview_exit():
+    try:
+        try:
+            _press_single_key('esc')
+        except Exception:
+            try:
+                _press_single_key('esc')
+            except Exception as e:
+                print('taskview_exit fallback failed', e)
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+# Mouse down/up handlers for double-tap-and-hold
+@socketio.on('mousedown')
+def on_mousedown(data):
+    try:
+        pyautogui.mouseDown()
+        # mark server-side hold state for this socket so we can auto-release if needed
+        try:
+            sid = request.sid
+            st = touch_state.setdefault(sid, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None})
+            st['doubleTapHoldActive'] = True
+            st['lastMouseDownTime'] = time.time() * 1000
+            st['lastMouseDownSid'] = sid
+        except Exception:
+            pass
+    except Exception as e:
+        print('on_mousedown error', e)
+
+
+@socketio.on('mouseup')
+def on_mouseup(data):
+    try:
+        pyautogui.mouseUp()
+        try:
+            sid = request.sid
+            st = touch_state.setdefault(sid, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None})
+            st['doubleTapHoldActive'] = False
+            st['lastMouseDownTime'] = 0
+            st['lastMouseDownSid'] = None
+        except Exception:
+            pass
+    except Exception as e:
+        print('on_mouseup error', e)
+
+
+# Receive key events via socket
+@socketio.on('key')
+def on_key(data):
+    try:
+        # data expected: { type: 'char'|'key', value: 'a' } or for key: {type:'key', key:'Enter'...}
+        if not data:
+            return
+        if data.get('type') == 'char':
+            ch = data.get('value')
+            if ch:
+                try:
+                    pyautogui.typewrite(ch)
+                except Exception:
+                    pass
+        elif data.get('type') == 'key':
+            k = data.get('key')
+            # Map some common special keys
+            special_map = {
+                'Enter': 'enter',
+                'Backspace': 'backspace',
+                'Tab': 'tab',
+                'Escape': 'esc',
+                'ArrowLeft': 'left',
+                'ArrowRight': 'right',
+                'ArrowUp': 'up',
+                'ArrowDown': 'down'
+            }
+            mapped = special_map.get(k)
+            try:
+                if mapped:
+                    pyautogui.press(mapped)
+                else:
+                    # Fallback: send the raw key string if pyautogui supports it
+                    if k and len(k) == 1:
+                        pyautogui.typewrite(k)
+            except Exception:
+                pass
+    except Exception as e:
+        print('on_key error', e)
+
+
+@app.route('/key', methods=['POST'])
+def http_key():
+    try:
+        data = request.json or {}
+        # Mirror socket handler behavior
+        if data.get('type') == 'char':
+            ch = data.get('value')
+            if ch:
+                try:
+                    pyautogui.typewrite(ch)
+                except Exception:
+                    pass
+        elif data.get('type') == 'key':
+            k = data.get('key')
+            special_map = {
+                'Enter': 'enter',
+                'Backspace': 'backspace',
+                'Tab': 'tab',
+                'Escape': 'esc',
+                'ArrowLeft': 'left',
+                'ArrowRight': 'right',
+                'ArrowUp': 'up',
+                'ArrowDown': 'down'
+            }
+            mapped = special_map.get(k)
+            try:
+                if mapped:
+                    pyautogui.press(mapped)
+                else:
+                    if k and len(k) == 1:
+                        pyautogui.typewrite(k)
+            except Exception:
+                pass
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/mousedown', methods=['POST'])
+def http_mousedown():
+    try:
+        pyautogui.mouseDown()
+        try:
+            sid_key = _get_sid_for_http()
+            st = touch_state.setdefault(sid_key, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None})
+            st['doubleTapHoldActive'] = True
+            st['lastMouseDownTime'] = time.time() * 1000
+            st['lastMouseDownSid'] = sid_key
+        except Exception:
+            pass
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/mouseup', methods=['POST'])
+def http_mouseup():
+    try:
+        pyautogui.mouseUp()
+        try:
+            sid_key = _get_sid_for_http()
+            st = touch_state.setdefault(sid_key, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None})
+            st['doubleTapHoldActive'] = False
+            st['lastMouseDownTime'] = 0
+            st['lastMouseDownSid'] = None
+        except Exception:
+            pass
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
 @app.route('/drag', methods=['POST'])
 def drag_mouse():
@@ -242,13 +953,29 @@ if __name__ == '__main__':
     local_ip = socket.gethostbyname(hostname)
     
     print(f"Starting trackpad server...")
-    print(f"Access from your phone at: http://{local_ip}:5000")
-    print(f"Or access locally at: http://localhost:5000")
-    print(f"Screen size detected: {screen_width}x{screen_height}")
+    print(f"Access from your phone at: http://{local_ip}:51273")
+    print(f"Or access locally at: http://localhost:51273")
+    print(f"Virtual screen detected: left={virtual_left}, top={virtual_top}, size={screen_width}x{screen_height}")
     
     # Run with SocketIO so WebSocket support is enabled. If eventlet/gevent isn't installed
     # this will still work with the default development server for HTTP fallback.
     try:
-        socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+        socketio.run(app, host='0.0.0.0', port=51273, debug=True)
     except Exception:
-        app.run(host='0.0.0.0', port=5000, debug=True)
+        app.run(host='0.0.0.0', port=51273, debug=True)
+
+
+@app.route('/versions')
+def versions():
+    """Return versions of socket-related libraries installed on the server to help debug client/server protocol compatibility."""
+    try:
+        import socketio as pysocketio
+        import engineio as pyengineio
+        import flask_socketio as flasksocketio
+        return jsonify({
+            'python-socketio': getattr(pysocketio, '__version__', 'unknown'),
+            'python-engineio': getattr(pyengineio, '__version__', 'unknown'),
+            'flask-socketio': getattr(flasksocketio, '__version__', 'unknown')
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)})

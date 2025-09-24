@@ -10,11 +10,27 @@
         html, body { height: 100%; margin: 0; }
         #trackpad { width: 100vw; height: 100vh; touch-action: none; }
     </style>
+    <!-- PWA manifest and Apple meta tags for Home Screen / standalone behavior -->
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon-180.png') }}">
 </head>
 <body>
     <div id="trackpad" aria-label="Trackpad"></div>
-    <!-- socket.io client (served by Flask-SocketIO) -->
-    <script src="/socket.io/socket.io.js"></script>
+    <!-- Keyboard toggle and hidden input for text entry -->
+    <button id="kbToggle" aria-label="Open keyboard" title="Keyboard">⌨️</button>
+    <input id="kbInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+    <!-- socket.io client (served by Flask-SocketIO). If that fails, fall back to CDN. -->
+    <script src="/socket.io/socket.io.js" onerror="this.onerror=null;this.src='https://cdn.socket.io/4.7.2/socket.io.min.js'"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // Register service worker to enable offline and make the site installable where supported
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register("{{ url_for('static', filename='sw.js') }}")
+                .then(function(reg) { console.log('SW registered', reg); })
+                .catch(function(err) { console.warn('SW registration failed', err); });
+        }
+    </script>
 </body>
 </html>
