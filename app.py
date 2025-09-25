@@ -25,6 +25,37 @@ MIN_SCROLL_FRAC_TO_STEP = 0.05
 # Get screen size for scaling
 screen_width, screen_height = pyautogui.size()
 
+# Media control mappings
+MEDIA_CONTROLS = {
+    'play_pause': 'space',
+    'volume_up': 'volumeup',
+    'volume_down': 'volumedown',
+    'mute': 'volumemute',
+    'next_track': 'nexttrack',
+    'prev_track': 'prevtrack',
+    'stop': 'stop'
+}
+
+# Presentation control mappings
+PRESENTATION_CONTROLS = {
+    'next_slide': 'right',
+    'prev_slide': 'left',
+    'start_slideshow': 'f5',
+    'exit_slideshow': 'esc',
+    'black_screen': 'b',
+    'white_screen': 'w'
+}
+
+# Application shortcuts (customizable)
+APP_SHORTCUTS = {
+    'chrome': ['win', '1'],
+    'vscode': ['win', '2'],
+    'explorer': ['win', 'e'],
+    'notepad': ['win', 'r'],  # Will type notepad and enter
+    'calculator': ['win', 'r'],  # Will type calc and enter
+    'task_manager': ['ctrl', 'shift', 'esc']
+}
+
 # Accumulators to buffer fractional scrolls so very small client deltas still result in scrolling
 scroll_accum_x = 0.0
 scroll_accum_y = 0.0
@@ -146,6 +177,121 @@ def scroll_mouse():
         return jsonify({'status': 'error', 'message': str(e)})
 
 
+@app.route('/media', methods=['POST'])
+def media_control():
+    """媒體控制功能 - 播放/暫停、音量控制等"""
+    try:
+        data = request.json
+        action = data.get('action', '')
+        
+        if action in MEDIA_CONTROLS:
+            key = MEDIA_CONTROLS[action]
+            if action == 'play_pause':
+                # 特殊處理播放暫停，需要根據當前應用程式
+                pyautogui.press(key)
+            else:
+                pyautogui.press(key)
+            return jsonify({'status': 'success', 'action': action})
+        else:
+            return jsonify({'status': 'error', 'message': f'Unknown media action: {action}'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/presentation', methods=['POST'])
+def presentation_control():
+    """簡報控制功能 - 投影片切換、開始簡報等"""
+    try:
+        data = request.json
+        action = data.get('action', '')
+        
+        if action in PRESENTATION_CONTROLS:
+            key = PRESENTATION_CONTROLS[action]
+            pyautogui.press(key)
+            return jsonify({'status': 'success', 'action': action})
+        else:
+            return jsonify({'status': 'error', 'message': f'Unknown presentation action: {action}'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/app', methods=['POST'])
+def app_control():
+    """應用程式控制 - 切換和開啟常用程式"""
+    try:
+        data = request.json
+        app_name = data.get('app', '')
+        
+        if app_name in APP_SHORTCUTS:
+            keys = APP_SHORTCUTS[app_name]
+            if app_name == 'calculator':
+                # 特殊處理小算盤 - Win+R 然後輸入 calc
+                pyautogui.hotkey('win', 'r')
+                time.sleep(0.5)
+                pyautogui.typewrite('calc')
+                pyautogui.press('enter')
+            elif app_name == 'notepad':
+                # 特殊處理記事本 - Win+R 然後輸入 notepad
+                pyautogui.hotkey('win', 'r')
+                time.sleep(0.5)
+                pyautogui.typewrite('notepad')
+                pyautogui.press('enter')
+            else:
+                pyautogui.hotkey(*keys)
+            return jsonify({'status': 'success', 'app': app_name})
+        else:
+            return jsonify({'status': 'error', 'message': f'Unknown app: {app_name}'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/keyboard', methods=['POST'])
+def keyboard_control():
+    """鍵盤快捷鍵控制 - 自訂按鍵組合"""
+    try:
+        data = request.json
+        keys = data.get('keys', [])
+        
+        if keys:
+            pyautogui.hotkey(*keys)
+            return jsonify({'status': 'success', 'keys': keys})
+        else:
+            return jsonify({'status': 'error', 'message': 'No keys provided'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
+@app.route('/system', methods=['POST'])
+def system_control():
+    """系統控制 - 關機、重啟、睡眠等"""
+    try:
+        data = request.json
+        action = data.get('action', '')
+        
+        if action == 'sleep':
+            pyautogui.hotkey('win', 'x')
+            time.sleep(0.5)
+            pyautogui.press('u')
+            time.sleep(0.5)
+            pyautogui.press('s')
+        elif action == 'shutdown':
+            pyautogui.hotkey('alt', 'f4')
+            time.sleep(0.5)
+            pyautogui.press('enter')
+        elif action == 'restart':
+            pyautogui.hotkey('win', 'x')
+            time.sleep(0.5)
+            pyautogui.press('u')
+            time.sleep(0.5)
+            pyautogui.press('r')
+        else:
+            return jsonify({'status': 'error', 'message': f'Unknown system action: {action}'})
+            
+        return jsonify({'status': 'success', 'action': action})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
+
+
 # SocketIO handlers - lower-latency path (client will emit these when connected)
 @socketio.on('move')
 def on_move(data):
@@ -202,8 +348,10 @@ def on_scroll(data):
                 scroll_amount_x = int(scroll_accum_x)
                 if scroll_amount_x != 0:
                     try:
+                        # Some PyAutoGUI versions expose hscroll
                         pyautogui.hscroll(scroll_amount_x)
                     except Exception:
+                        # Fallback: use shift+vertical scroll to emulate horizontal scroll
                         if scroll_amount_x > 0:
                             pyautogui.keyDown('shift')
                             pyautogui.scroll(int(abs(scroll_amount_x)))
@@ -213,8 +361,126 @@ def on_scroll(data):
                             pyautogui.scroll(-int(abs(scroll_amount_x)))
                             pyautogui.keyUp('shift')
                     scroll_accum_x -= scroll_amount_x
+                else:
+                    if abs(scroll_accum_x) >= MIN_SCROLL_FRAC_TO_STEP:
+                        step_x = int(math.copysign(1, scroll_accum_x))
+                        try:
+                            pyautogui.hscroll(step_x)
+                        except Exception:
+                            if step_x > 0:
+                                pyautogui.keyDown('shift')
+                                pyautogui.scroll(int(abs(step_x)))
+                                pyautogui.keyUp('shift')
+                            else:
+                                pyautogui.keyDown('shift')
+                                pyautogui.scroll(-int(abs(step_x)))
+                                pyautogui.keyUp('shift')
+                        scroll_accum_x -= step_x
     except Exception as e:
         print('on_scroll error', e)
+
+
+# SocketIO handlers for universal remote
+@socketio.on('media')
+def on_media(data):
+    """WebSocket 媒體控制"""
+    try:
+        action = data.get('action', '')
+        if action in MEDIA_CONTROLS:
+            key = MEDIA_CONTROLS[action]
+            pyautogui.press(key)
+            print(f"[Media] {action} -> {key}")
+        else:
+            print(f"[Media] Unknown action: {action}")
+    except Exception as e:
+        print(f'[Media] Error: {e}')
+
+
+@socketio.on('presentation')
+def on_presentation(data):
+    """WebSocket 簡報控制"""
+    try:
+        action = data.get('action', '')
+        if action in PRESENTATION_CONTROLS:
+            key = PRESENTATION_CONTROLS[action]
+            pyautogui.press(key)
+            print(f"[Presentation] {action} -> {key}")
+        else:
+            print(f"[Presentation] Unknown action: {action}")
+    except Exception as e:
+        print(f'[Presentation] Error: {e}')
+
+
+@socketio.on('app')
+def on_app(data):
+    """WebSocket 應用程式控制"""
+    try:
+        app_name = data.get('app', '')
+        if app_name in APP_SHORTCUTS:
+            if app_name == 'calculator':
+                pyautogui.hotkey('win', 'r')
+                time.sleep(0.5)
+                pyautogui.typewrite('calc')
+                pyautogui.press('enter')
+                print(f"[App] Opened calculator")
+            elif app_name == 'notepad':
+                pyautogui.hotkey('win', 'r')
+                time.sleep(0.5)
+                pyautogui.typewrite('notepad')
+                pyautogui.press('enter')
+                print(f"[App] Opened notepad")
+            else:
+                keys = APP_SHORTCUTS[app_name]
+                pyautogui.hotkey(*keys)
+                print(f"[App] {app_name} -> {keys}")
+        else:
+            print(f"[App] Unknown app: {app_name}")
+    except Exception as e:
+        print(f'[App] Error: {e}')
+
+
+@socketio.on('keyboard')
+def on_keyboard(data):
+    """WebSocket 鍵盤快捷鍵"""
+    try:
+        keys = data.get('keys', [])
+        if keys:
+            pyautogui.hotkey(*keys)
+            print(f"[Keyboard] {keys}")
+        else:
+            print("[Keyboard] No keys provided")
+    except Exception as e:
+        print(f'[Keyboard] Error: {e}')
+
+
+@socketio.on('system')
+def on_system(data):
+    """WebSocket 系統控制"""
+    try:
+        action = data.get('action', '')
+        if action == 'sleep':
+            pyautogui.hotkey('win', 'x')
+            time.sleep(0.5)
+            pyautogui.press('u')
+            time.sleep(0.5)
+            pyautogui.press('s')
+            print("[System] Sleep mode activated")
+        elif action == 'shutdown':
+            pyautogui.hotkey('alt', 'f4')
+            time.sleep(0.5)
+            pyautogui.press('enter')
+            print("[System] Shutdown initiated")
+        elif action == 'restart':
+            pyautogui.hotkey('win', 'x')
+            time.sleep(0.5)
+            pyautogui.press('u')
+            time.sleep(0.5)
+            pyautogui.press('r')
+            print("[System] Restart initiated")
+        else:
+            print(f"[System] Unknown action: {action}")
+    except Exception as e:
+        print(f'[System] Error: {e}')
 
 @app.route('/drag', methods=['POST'])
 def drag_mouse():
@@ -236,19 +502,27 @@ def drag_mouse():
         return jsonify({'status': 'error', 'message': str(e)})
 
 if __name__ == '__main__':
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Universal PC Remote Server')
+    parser.add_argument('--port', type=int, default=5000, help='Port to run the server on (default: 5000)')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
+    args = parser.parse_args()
+    
     # Get the local IP address to display to user
     import socket
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
     
     print(f"Starting trackpad server...")
-    print(f"Access from your phone at: http://{local_ip}:5000")
-    print(f"Or access locally at: http://localhost:5000")
+    print(f"Access from your phone at: http://{local_ip}:{args.port}")
+    print(f"Or access locally at: http://localhost:{args.port}")
     print(f"Screen size detected: {screen_width}x{screen_height}")
     
     # Run with SocketIO so WebSocket support is enabled. If eventlet/gevent isn't installed
     # this will still work with the default development server for HTTP fallback.
     try:
-        socketio.run(app, host='0.0.0.0', port=5000, debug=True)
+        socketio.run(app, host=args.host, port=args.port, debug=True)
     except Exception:
-        app.run(host='0.0.0.0', port=5000, debug=True)
+        app.run(host=args.host, port=args.port, debug=True)

@@ -1,16 +1,67 @@
-/* Minimal styles for a full-screen trackpad with touch feedback */
+/* 萬能PC遙控器樣式 */
 html, body {
     height: 100%;
     margin: 0;
-    background: #ffffff;
-    overscroll-behavior: none; /* prevent browser page scroll/refresh on touch */
+    background: #1a1a1a;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    overscroll-behavior: none;
+    color: #ffffff;
 }
 
+/* 模式切換器 */
+.mode-switcher {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    gap: 5px;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 8px;
+    border-radius: 25px;
+    backdrop-filter: blur(10px);
+}
+
+.mode-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 20px;
+    background: transparent;
+    color: #ffffff;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.mode-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.mode-btn.active {
+    background: #007acc;
+    color: white;
+}
+
+/* 模式容器 */
+.mode-container {
+    display: none;
+    height: 100vh;
+    padding-top: 60px; /* 為模式切換器留空間 */
+    box-sizing: border-box;
+}
+
+.mode-container.active {
+    display: block;
+}
+
+/* 觸控板模式 */
 #trackpad {
     width: 100vw;
-    height: 100vh;
+    height: calc(100vh - 60px);
     touch-action: none;
-    overscroll-behavior: contain; /* keep scroll gestures within the element */
+    overscroll-behavior: contain;
     -webkit-user-select: none;
     user-select: none;
     background: #ffffff;
@@ -33,4 +84,103 @@ html, body {
 @keyframes touchFeedback {
     from { transform: scale(0.3); opacity: 1; }
     to   { transform: scale(1.0); opacity: 0; }
+}
+
+/* 遙控器控制面板 */
+.remote-control {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.remote-control h2 {
+    color: #ffffff;
+    margin-bottom: 30px;
+    font-size: 24px;
+    text-align: center;
+}
+
+.control-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 15px;
+    max-width: 400px;
+    width: 100%;
+}
+
+.control-btn {
+    padding: 20px;
+    border: none;
+    border-radius: 15px;
+    background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+    color: #ffffff;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 5px 5px 10px #0a0a0a, -5px -5px 10px #2a2a2a;
+    text-align: center;
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.control-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 7px 7px 14px #0a0a0a, -7px -7px 14px #2a2a2a;
+}
+
+.control-btn:active {
+    transform: translateY(0);
+    box-shadow: inset 3px 3px 6px #0a0a0a, inset -3px -3px 6px #2a2a2a;
+}
+
+.control-btn.active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* 響應式設計 */
+@media (max-width: 480px) {
+    .mode-switcher {
+        top: 5px;
+        padding: 5px;
+        gap: 3px;
+    }
+    
+    .mode-btn {
+        padding: 6px 12px;
+        font-size: 11px;
+    }
+    
+    .mode-container {
+        padding-top: 50px;
+    }
+    
+    #trackpad {
+        height: calc(100vh - 50px);
+    }
+    
+    .control-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+    
+    .control-btn {
+        padding: 15px;
+        font-size: 14px;
+        min-height: 60px;
+    }
+    
+    .remote-control h2 {
+        font-size: 20px;
+        margin-bottom: 20px;
+    }
 }

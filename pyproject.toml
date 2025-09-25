@@ -1,0 +1,24 @@
+[project]
+name = "digital-trackpad"
+version = "1.0.0"
+description = "萬能PC遙控器 - 透過網頁控制電腦的完整解決方案"
+authors = [
+    {name = "開發者", email = "developer@example.com"}
+]
+dependencies = [
+    "Flask>=2.3.0",
+    "pyautogui>=0.9.50",
+    "Pillow>=9.0.0",
+    "Flask-SocketIO>=5.3.2",
+    "eventlet>=0.33.0",
+]
+requires-python = ">=3.8"
+readme = "README.md"
+license = {text = "MIT"}
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+]

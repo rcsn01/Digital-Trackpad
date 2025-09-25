@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>萬能PC遙控器 - 簡化測試</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .mode-btn {
+            padding: 15px 25px;
+            margin: 10px;
+            border: none;
+            border-radius: 25px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        .mode-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        .mode-btn.active {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.05);
+        }
+        .control-panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .control-btn {
+            padding: 15px 25px;
+            margin: 5px;
+            border: none;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.2s ease;
+        }
+        .control-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        .control-btn:active {
+            transform: scale(0.95);
+        }
+        #status {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 萬能PC遙控器</h1>
+        
+        <div class="mode-selector">
+            <button class="mode-btn active" onclick="switchMode('trackpad')">觸控板</button>
+            <button class="mode-btn" onclick="switchMode('media')">媒體控制</button>
+            <button class="mode-btn" onclick="switchMode('presentation')">簡報控制</button>
+            <button class="mode-btn" onclick="switchMode('apps')">應用程式</button>
+        </div>
+
+        <div id="trackpad-panel" class="control-panel">
+            <h3>觸控板控制</h3>
+            <button class="control-btn" onclick="testCommand('trackpad', '左鍵點擊')">🖱️ 左鍵點擊</button>
+            <button class="control-btn" onclick="testCommand('trackpad', '右鍵點擊')">🖱️ 右鍵點擊</button>
+        </div>
+
+        <div id="media-panel" class="control-panel" style="display: none;">
+            <h3>媒體控制</h3>
+            <button class="control-btn" onclick="testCommand('media', '播放/暫停')">⏯️ 播放/暫停</button>
+            <button class="control-btn" onclick="testCommand('media', '音量+')">🔊 音量+</button>
+            <button class="control-btn" onclick="testCommand('media', '音量-')">🔉 音量-</button>
+        </div>
+
+        <div id="presentation-panel" class="control-panel" style="display: none;">
+            <h3>簡報控制</h3>
+            <button class="control-btn" onclick="testCommand('presentation', '下一頁')">➡️ 下一頁</button>
+            <button class="control-btn" onclick="testCommand('presentation', '上一頁')">⬅️ 上一頁</button>
+        </div>
+
+        <div id="apps-panel" class="control-panel" style="display: none;">
+            <h3>應用程式控制</h3>
+            <button class="control-btn" onclick="testCommand('apps', 'Chrome')">🌐 Chrome</button>
+            <button class="control-btn" onclick="testCommand('apps', '記事本')">📝 記事本</button>
+        </div>
+
+        <div id="status">
+            <strong>狀態:</strong> <span id="status-text">準備就緒</span>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'trackpad';
+        
+        function switchMode(mode) {
+            currentMode = mode;
+            
+            // 更新按鈕狀態
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // 隱藏所有面板
+            document.querySelectorAll('.control-panel').forEach(panel => {
+                panel.style.display = 'none';
+            });
+            
+            // 顯示對應面板
+            document.getElementById(mode + '-panel').style.display = 'block';
+            
+            updateStatus('切換到 ' + getModeName(mode) + ' 模式');
+        }
+        
+        function getModeName(mode) {
+            const names = {
+                'trackpad': '觸控板',
+                'media': '媒體控制',
+                'presentation': '簡報控制',
+                'apps': '應用程式'
+            };
+            return names[mode] || mode;
+        }
+        
+        function testCommand(mode, action) {
+            updateStatus('測試 ' + getModeName(mode) + ': ' + action);
+            
+            // 模擬發送命令
+            setTimeout(() => {
+                updateStatus('命令已發送: ' + action);
+            }, 500);
+        }
+        
+        function updateStatus(message) {
+            document.getElementById('status-text').textContent = message;
+            setTimeout(() => {
+                document.getElementById('status-text').textContent = '準備就緒';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

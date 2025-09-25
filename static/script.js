@@ -1,67 +1,254 @@
-// PhoneTrackpad - minimal, robust client
-// Responsibilities:
-// - Capture touch events and convert to move/scroll/click
-// - Prevent clicks after any movement (movement wins)
-// - Use fire-and-forget network calls to reduce perceived latency
+// 萬能PC遙控器 - 多模式控制客戶端
+// 功能：
+// - 觸控板模式：滑鼠移動、點擊、滾動
+// - 媒體控制模式：音量、播放控制
+// - 簡報控制模式：簡報導航
+// - 應用程式模式：快速啟動應用程式
 
-class PhoneTrackpad {
+class UniversalRemote {
     constructor() {
-        this.trackpad = document.getElementById('trackpad');
-        this.touches = new Map(); // Track multiple touches by identifier
-        this.lastMove = 0; // Timestamp of last move to throttle
-    this.moveThrottle = 5; // Minimum ms between move events (lower for more responsiveness)
-    this.sensitivity = 6; // Mouse movement sensitivity multiplier
-    // Threshold (in pixels after sensitivity) to consider movement worth sending
-    this.moveSendThreshold = 0.35;
-    this.scrollSensitivity = 30; // Scroll sensitivity (tuned so server int step > 0)
-    // Accumulators to buffer small fractional scrolls until they are meaningful server-side
-    this.scrollAccumX = 0;
-    this.scrollAccumY = 0;
-    // Batch threshold: lower means smaller movement triggers a send sooner
-    // Default lowered so small movements are detected faster
-    this.scrollBatchThreshold = 0.02;
+        this.currentMode = 'trackpad';
+        this.socket = null;
+        this.pendingRequests = new Set();
         
-    // Optional debug
-    this.debug = false;
-    this.tapThreshold = 6; // Max pixels moved to still count as tap (lowered to detect small moves)
-        this.tapTimeout = 200; // Max ms for tap gesture
-        this.pendingRequests = new Set(); // Track pending network requests
+        this.initSocket();
+        this.initModeSwitcher();
+        this.initTrackpad();
+        this.initRemoteControls();
+    }
+    
+    initSocket() {
+        try {
+            if (typeof io === 'function') {
+                this.socket = io();
+                this.socket.on('connect', () => {
+                    console.log('Socket連接成功');
+                });
+                this.socket.on('disconnect', () => {
+                    console.log('Socket連接斷開');
+                });
+            }
+        } catch (e) {
+            this.socket = null;
+        }
+    }
+    
+    initModeSwitcher() {
+        const modeButtons = document.querySelectorAll('.mode-btn');
+        const modeContainers = document.querySelectorAll('.mode-container');
+        
+        modeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.mode;
+                
+                // 更新按鈕狀態
+                modeButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                
+                // 更新模式容器
+                modeContainers.forEach(container => {
+                    container.classList.remove('active');
+                });
+                document.getElementById(`${mode}-mode`).classList.add('active');
+                
+                this.currentMode = mode;
+                console.log(`切換到${this.getModeName(mode)}模式`);
+            });
+        });
+    }
+    
+    getModeName(mode) {
+        const names = {
+            'trackpad': '觸控板',
+            'media': '媒體控制',
+            'presentation': '簡報控制',
+            'apps': '應用程式'
+        };
+        return names[mode] || mode;
+    }
+    
+    initTrackpad() {
+        this.trackpad = new PhoneTrackpad(this.socket);
+        
+        // 綁定控制按鈕事件
+        this.bindControlButtons();
+    }
+    
+    bindControlButtons() {
+        // 媒體控制
+        document.querySelectorAll('[data-media]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.media;
+                this.sendMediaCommand(action);
+                this.addButtonFeedback(btn);
+            });
+        });
+        
+        // 簡報控制
+        document.querySelectorAll('[data-presentation]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.presentation;
+                this.sendPresentationCommand(action);
+                this.addButtonFeedback(btn);
+            });
+        });
+        
+        // 應用程式控制
+        document.querySelectorAll('[data-app]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const app = btn.dataset.app;
+                this.sendAppCommand(app);
+                this.addButtonFeedback(btn);
+            });
+        });
+        
+        // 鍵盤快捷鍵
+        document.querySelectorAll('[data-keyboard]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const key = btn.dataset.keyboard;
+                this.sendKeyboardCommand(key);
+                this.addButtonFeedback(btn);
+            });
+        });
+        
+        // 系統控制
+        document.querySelectorAll('[data-system]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.system;
+                this.sendSystemCommand(action);
+                this.addButtonFeedback(btn);
+            });
+        });
+    }
+    
+    addButtonFeedback(button) {
+        button.classList.add('active');
+        setTimeout(() => button.classList.remove('active'), 150);
+    }
+    
+    initRemoteControls() {
+        // 媒體控制
+        const mediaButtons = document.querySelectorAll('#media-mode .control-btn');
+        mediaButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                this.sendMediaControl(action);
+            });
+        });
+        
+        // 簡報控制
+        const presentationButtons = document.querySelectorAll('#presentation-mode .control-btn');
+        presentationButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                this.sendPresentationControl(action);
+            });
+        });
+        
+        // 應用程式控制
+        const appButtons = document.querySelectorAll('#apps-mode .control-btn');
+        appButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                this.sendAppControl(action);
+            });
+        });
+    }
+    
+    sendMediaControl(action) {
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('media', { action });
+            return;
+        }
+        
+        this.sendHttpRequest('/media', { action });
+    }
+    
+    sendPresentationControl(action) {
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('presentation', { action });
+            return;
+        }
+        
+        this.sendHttpRequest('/presentation', { action });
+    }
+    
+    sendAppControl(app) {
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('app', { app });
+            return;
+        }
+        
+        this.sendHttpRequest('/app', { app });
+    }
+    
+    sendSystemControl(action) {
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('system', { action });
+            return;
+        }
+        
+        this.sendHttpRequest('/system', { action });
+    }
+    
+    sendKeyboardControl(keys) {
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('keyboard', { keys });
+            return;
+        }
+        
+        this.sendHttpRequest('/keyboard', { keys });
+    }
+    
+    sendHttpRequest(endpoint, data) {
+        const requestId = `${endpoint}-${Date.now()}-${Math.random()}`;
+        if (this.pendingRequests.size > 10) return;
+        
+        this.pendingRequests.add(requestId);
+        fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        }).catch(() => {}).finally(() => {
+            this.pendingRequests.delete(requestId);
+        });
+    }
+}
+
+// 觸控板類別
+class PhoneTrackpad {
+    constructor(socket) {
+        this.trackpad = document.getElementById('trackpad');
+        this.socket = socket;
+        this.touches = new Map();
+        this.lastMove = 0;
+        this.moveThrottle = 5;
+        this.sensitivity = 6;
+        this.moveSendThreshold = 0.35;
+        this.scrollSensitivity = 30;
+        this.scrollAccumX = 0;
+        this.scrollAccumY = 0;
+        this.scrollBatchThreshold = 0.02;
+        
+        this.debug = false;
+        this.tapThreshold = 6;
+        this.tapTimeout = 200;
+        this.pendingRequests = new Set();
         
         this.initEventListeners();
     }
     
     initEventListeners() {
-        // Prevent default touch behaviors
         this.trackpad.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
         this.trackpad.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
         this.trackpad.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
         this.trackpad.addEventListener('touchcancel', this.handleTouchEnd.bind(this), { passive: false });
         
-        // Prevent context menu and other unwanted behaviors
         this.trackpad.addEventListener('contextmenu', e => e.preventDefault());
         this.trackpad.addEventListener('selectstart', e => e.preventDefault());
         
-        // Keep screen awake if possible
         if ('wakeLock' in navigator) {
-            navigator.wakeLock.request('screen').catch(() => {
-                // Wake lock not supported or denied
-            });
-        }
-
-        // Initialize socket.io connection if available
-        try {
-            if (typeof io === 'function') {
-                this.socket = io();
-                this.socket.on('connect', () => {
-                    if (this.debug) console.debug('socket connected');
-                });
-                this.socket.on('disconnect', () => {
-                    if (this.debug) console.debug('socket disconnected');
-                });
-            }
-        } catch (e) {
-            // Socket.IO not available - HTTP fallback will be used
-            this.socket = null;
+            navigator.wakeLock.request('screen').catch(() => {});
         }
     }
     
@@ -180,7 +367,6 @@ class PhoneTrackpad {
     }
     
     sendMoveCommand(deltaX, deltaY) {
-        // Prefer socket if connected
         if (this.socket && this.socket.connected) {
             try {
                 this.socket.emit('move', { deltaX, deltaY });
@@ -191,7 +377,6 @@ class PhoneTrackpad {
             return;
         }
 
-        // HTTP fallback
         const requestId = `move-${Date.now()}-${Math.random()}`;
         if (this.pendingRequests.size > 5) return;
         this.pendingRequests.add(requestId);
@@ -264,7 +449,6 @@ class PhoneTrackpad {
     }
     
     sendScrollCommand(scrollX, scrollY) {
-        // Prefer socket if connected
         if (this.socket && this.socket.connected) {
             try {
                 this.socket.emit('scroll', { scrollX, scrollY });
@@ -281,6 +465,126 @@ class PhoneTrackpad {
         fetch('/scroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scrollX, scrollY }) })
             .catch(() => {})
             .finally(() => { if (this.debug) console.debug('POST /scroll', { scrollX, scrollY }); this.pendingRequests.delete(requestId); });
+    }
+
+    sendMediaCommand(action) {
+        if (this.socket && this.socket.connected) {
+            try {
+                this.socket.emit('media', { action });
+                if (this.debug) console.debug('socket emit media', { action });
+            } catch (e) {
+                // fall through to HTTP fallback
+            }
+            return;
+        }
+
+        const requestId = `media-${Date.now()}-${Math.random()}`;
+        if (this.pendingRequests.size > 5) return;
+        this.pendingRequests.add(requestId);
+        fetch('/media', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action })
+        }).catch(() => {}).finally(() => {
+            if (this.debug) console.debug('POST /media', { action });
+            this.pendingRequests.delete(requestId);
+        });
+    }
+
+    sendPresentationCommand(action) {
+        if (this.socket && this.socket.connected) {
+            try {
+                this.socket.emit('presentation', { action });
+                if (this.debug) console.debug('socket emit presentation', { action });
+            } catch (e) {
+                // fall through to HTTP fallback
+            }
+            return;
+        }
+
+        const requestId = `presentation-${Date.now()}-${Math.random()}`;
+        if (this.pendingRequests.size > 5) return;
+        this.pendingRequests.add(requestId);
+        fetch('/presentation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action })
+        }).catch(() => {}).finally(() => {
+            if (this.debug) console.debug('POST /presentation', { action });
+            this.pendingRequests.delete(requestId);
+        });
+    }
+
+    sendAppCommand(app) {
+        if (this.socket && this.socket.connected) {
+            try {
+                this.socket.emit('app', { app });
+                if (this.debug) console.debug('socket emit app', { app });
+            } catch (e) {
+                // fall through to HTTP fallback
+            }
+            return;
+        }
+
+        const requestId = `app-${Date.now()}-${Math.random()}`;
+        if (this.pendingRequests.size > 5) return;
+        this.pendingRequests.add(requestId);
+        fetch('/app', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ app })
+        }).catch(() => {}).finally(() => {
+            if (this.debug) console.debug('POST /app', { app });
+            this.pendingRequests.delete(requestId);
+        });
+    }
+
+    sendKeyboardCommand(key) {
+        if (this.socket && this.socket.connected) {
+            try {
+                this.socket.emit('keyboard', { key });
+                if (this.debug) console.debug('socket emit keyboard', { key });
+            } catch (e) {
+                // fall through to HTTP fallback
+            }
+            return;
+        }
+
+        const requestId = `keyboard-${Date.now()}-${Math.random()}`;
+        if (this.pendingRequests.size > 5) return;
+        this.pendingRequests.add(requestId);
+        fetch('/keyboard', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key })
+        }).catch(() => {}).finally(() => {
+            if (this.debug) console.debug('POST /keyboard', { key });
+            this.pendingRequests.delete(requestId);
+        });
+    }
+
+    sendSystemCommand(action) {
+        if (this.socket && this.socket.connected) {
+            try {
+                this.socket.emit('system', { action });
+                if (this.debug) console.debug('socket emit system', { action });
+            } catch (e) {
+                // fall through to HTTP fallback
+            }
+            return;
+        }
+
+        const requestId = `system-${Date.now()}-${Math.random()}`;
+        if (this.pendingRequests.size > 5) return;
+        this.pendingRequests.add(requestId);
+        fetch('/system', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action })
+        }).catch(() => {}).finally(() => {
+            if (this.debug) console.debug('POST /system', { action });
+            this.pendingRequests.delete(requestId);
+        });
     }
 
     // Runtime tuning for scroll behavior
@@ -353,10 +657,8 @@ class PhoneTrackpad {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-    const tp = new PhoneTrackpad();
-    // Expose for debugging/tweaks from console
-    window.phoneTrackpad = tp;
-    // Optional: warm up and indicate connectivity
-    tp.checkConnection().catch(() => {});
+    const remote = new UniversalRemote();
+    // 暴露給控制台調試
+    window.universalRemote = remote;
 });
 

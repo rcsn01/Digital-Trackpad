@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>基本測試</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        button { padding: 10px; margin: 5px; font-size: 16px; }
+        .mode-btn { background: #007bff; color: white; border: none; border-radius: 5px; }
+        .control-btn { background: #28a745; color: white; border: none; border-radius: 5px; }
+        #status { margin-top: 20px; padding: 10px; background: #f8f9fa; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>萬能PC遙控器 - 基本測試</h1>
+    
+    <h3>模式切換</h3>
+    <button class="mode-btn" onclick="switchMode('trackpad')">觸控板</button>
+    <button class="mode-btn" onclick="switchMode('media')">媒體</button>
+    <button class="mode-btn" onclick="switchMode('presentation')">簡報</button>
+    <button class="mode-btn" onclick="switchMode('apps')">應用程式</button>
+    
+    <h3>控制按鈕</h3>
+    <button class="control-btn" onclick="sendCommand('test')">測試命令</button>
+    <button class="control-btn" onclick="sendMediaCommand('play_pause')">播放/暫停</button>
+    <button class="control-btn" onclick="sendPresentationCommand('next_slide')">下一頁</button>
+    
+    <div id="status">狀態: <span id="status-text">就緒</span></div>
+    
+    <script>
+        function switchMode(mode) {
+            updateStatus('切換到 ' + mode + ' 模式');
+        }
+        
+        function sendCommand(cmd) {
+            updateStatus('發送命令: ' + cmd);
+        }
+        
+        function sendMediaCommand(cmd) {
+            updateStatus('發送媒體命令: ' + cmd);
+        }
+        
+        function sendPresentationCommand(cmd) {
+            updateStatus('發送簡報命令: ' + cmd);
+        }
+        
+        function updateStatus(msg) {
+            document.getElementById('status-text').textContent = msg;
+            setTimeout(() => {
+                document.getElementById('status-text').textContent = '就緒';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

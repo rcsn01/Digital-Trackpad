@@ -1,107 +1,143 @@
-# Phone Trackpad - Web-based Mouse Control
+# 萬能PC遙控器 - 使用說明
 
-Transform your phone into a wireless trackpad for your PC! This web application allows you to control your computer's mouse cursor and perform clicks using your phone's touchscreen.
+## 🎯 專案簡介
 
-## Features
+這是一個基於網頁的PC遙控器應用程式，讓您可以透過手機或平板電腦遠端控制您的Windows電腦。
 
-- **Mouse Movement**: Use one finger to move the cursor
-- **Two-Finger Scrolling**: Natural scrolling with two fingers
-- **Click Controls**: Left, right, and middle click buttons
-- **Adjustable Sensitivity**: Customize cursor and scroll sensitivity
-- **Drag Mode**: Enable dragging functionality
-- **Mobile Optimized**: Responsive design for phone screens
-- **LAN Access**: Access from any device on your local network
+## ✨ 主要功能
 
-## Setup Instructions
+### 1. 觸控板控制
+- **滑鼠移動**: 在觸控區域滑動即可控制滑鼠游標
+- **左鍵點擊**: 單指輕觸
+- **右鍵點擊**: 雙指輕觸
+- **滾動**: 雙指滑動
 
-### 1. Install Python Dependencies
+### 2. 媒體控制
+- 播放/暫停 ⏯️
+- 上一首/下一首 ⏮️⏭️
+- 音量調整 🔊🔉
+- 靜音 🔇
 
-First, make sure you have Python 3.7+ installed on your PC. Then install the required packages:
+### 3. 簡報控制
+- 上一頁/下一頁 ⬅️➡️
+- 開始簡報 ▶️
+- 結束簡報 ⏹️
 
+### 4. 應用程式控制
+- 開啟 Chrome 🌐
+- 開啟記事本 📝
+- 開啟計算機 🧮
+- 開啟檔案總管 📁
+
+### 5. 系統控制
+- 系統睡眠 😴
+- 關機 🔄
+- 重新啟動 🔄
+- 顯示桌面 🖥️
+- 切換視窗 🔄
+- 鎖定電腦 🔒
+
+### 6. 鍵盤輸入
+- 文字輸入
+- 快捷鍵發送
+
+### 7. 自訂按鈕 (新功能) 🎛️
+- 建立個人化快捷按鈕
+- 支援多種控制類型
+- 可儲存和載入配置
+
+## 🚀 快速開始
+
+### 安裝需求
+- Python 3.7+
+- Windows 作業系統
+
+### 安裝步驟
+1. 安裝 Python 依賴套件：
 ```bash
-pip install -r requirements.txt
+pip install flask flask-socketio pyautogui
 ```
 
-### 2. Run the Server
-
-Start the Flask server:
-
+2. 執行應用程式：
 ```bash
 python app.py
 ```
 
-The server will start and display your local IP address. You'll see output like:
-
+3. 開啟瀏覽器，前往：
 ```
-Starting trackpad server...
-Access from your phone at: http://192.168.1.100:5000
-Or access locally at: http://localhost:5000
-Screen size detected: 1920x1080
+http://localhost:5000
 ```
 
-### 3. Connect Your Phone
+### 網路存取
+如果您想從其他裝置存取：
+```
+http://[您的IP位址]:5000
+```
 
-1. Make sure your phone is connected to the same Wi-Fi network as your PC
-2. Open your phone's web browser
-3. Navigate to the IP address shown in the terminal (e.g., `http://192.168.1.100:5000`)
-4. Add the page to your home screen for easy access
+## 📱 使用說明
 
-## How to Use
+### 基本操作
+1. **連接到伺服器**: 確保您的手機和電腦在同一網路下
+2. **選擇控制模式**: 點擊上方的模式按鈕切換不同功能
+3. **使用控制功能**: 根據選擇的模式使用相應的控制按鈕
 
-### Basic Controls
-- **Move Cursor**: Drag one finger on the trackpad area
-- **Left Click**: Tap once on the trackpad area
-- **Right Click**: Use the "Right Click" button
-- **Middle Click**: Use the "Middle Click" button
-- **Scroll**: Use two fingers and drag up/down or left/right
+### 自訂按鈕設定
+1. 點擊主頁面的「自訂按鈕設定」按鈕
+2. 選擇預設範本或建立新按鈕
+3. 設定按鈕名稱、圖示和功能
+4. 儲存配置並返回主頁面使用
 
-### Advanced Features
-- **Drag Mode**: Toggle the "Drag Mode" button to enable click-and-drag functionality
-- **Sensitivity**: Adjust cursor movement sensitivity with the slider
-- **Scroll Sensitivity**: Adjust scrolling speed with the slider
+## 🔧 技術架構
 
-### Visual Feedback
-- Status indicator shows current action (Ready, Moving cursor, Scrolling, etc.)
-- Touch feedback circles appear where you tap
-- Active buttons are highlighted
+### 後端
+- **Flask**: Web框架
+- **Flask-SocketIO**: 即時雙向通訊
+- **PyAutoGUI**: 系統控制自動化
 
-## Troubleshooting
+### 前端
+- **HTML5/CSS3**: 響應式介面
+- **JavaScript**: 互動邏輯
+- **Socket.IO**: 即時通訊
 
-### Connection Issues
-- Ensure both devices are on the same Wi-Fi network
-- Check Windows Firewall settings - you may need to allow Python through the firewall
-- Try accessing `http://localhost:5000` directly on your PC to test the server
+### 支援的瀏覽器
+- Chrome/Chromium
+- Firefox
+- Safari
+- Edge
 
-### Performance Issues
-- Reduce sensitivity if cursor movement is too fast
-- Close other applications to improve responsiveness
-- Ensure good Wi-Fi signal strength
+## ⚠️ 安全提示
 
-### PyAutoGUI Issues
-- PyAutoGUI has a fail-safe feature - move your mouse to the top-left corner to stop all actions
-- On some systems, you may need to run the script as administrator
-- Make sure your screen is not locked when using the trackpad
+1. **網路安全**: 僅在受信任的網路環境中使用
+2. **防火牆**: 確保防火牆允許所需端口
+3. **權限**: 某些功能可能需要管理員權限
 
-## Security Note
+## 🐛 故障排除
 
-This application runs a web server accessible on your local network. Only use on trusted networks. The server runs in debug mode by default for development - disable debug mode in production environments.
+### 連接問題
+- 檢查防火牆設置
+- 確認IP位址正確
+- 確保端口5000未被佔用
 
-## Customization
+### 功能問題
+- 檢查Python依賴是否安裝完整
+- 確認Windows權限設置
+- 查看控制台錯誤訊息
 
-You can modify the following in `app.py`:
-- `sensitivity` variable to change default mouse sensitivity
-- Port number (default: 5000)
-- PyAutogui settings and delays
+## 📞 支援
 
-The web interface can be customized by editing the HTML, CSS, and JavaScript files in the `templates` and `static` directories.
+如有問題，請檢查控制台錯誤訊息或查看應用程式日誌。
 
-## System Requirements
+## 📝 版本歷史
 
-- Python 3.7+
-- Windows, macOS, or Linux
-- Wi-Fi network
-- Modern web browser on phone (Chrome, Safari, Firefox, etc.)
+- v1.0.0: 基礎功能完成
+  - 觸控板控制
+  - 媒體控制
+  - 簡報控制
+  - 應用程式控制
+  - 系統控制
+  - 鍵盤輸入
+  - 自訂按鈕功能
 
-## License
+---
 
-This project is open source and available under the MIT License.
+**享受您的萬能PC遙控器體驗！** 🎉

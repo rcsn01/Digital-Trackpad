@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-TW">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-    <title>Trackpad</title>
+    <title>萬能PC遙控器</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
         /* Minimal inline safety styles to ensure full-screen trackpad if external CSS missing */
@@ -12,9 +12,76 @@
     </style>
 </head>
 <body>
-    <div id="trackpad" aria-label="Trackpad"></div>
+    <!-- 模式切換按鈕 -->
+    <div id="mode-switcher" class="mode-switcher">
+        <button class="mode-btn active" data-mode="trackpad">觸控板</button>
+        <button class="mode-btn" data-mode="media">媒體控制</button>
+        <button class="mode-btn" data-mode="presentation">簡報控制</button>
+        <button class="mode-btn" data-mode="apps">應用程式</button>
+    </div>
+
+    <!-- 觸控板模式 -->
+    <div id="trackpad-mode" class="mode-container active">
+        <div id="trackpad" aria-label="Trackpad"></div>
+    </div>
+
+    <!-- 媒體控制模式 -->
+    <div id="media-mode" class="mode-container">
+        <div class="remote-control">
+            <h2>媒體控制</h2>
+            <div class="control-grid">
+                <button class="control-btn" data-action="volume_up">🔊 音量+</button>
+                <button class="control-btn" data-action="volume_down">🔉 音量-</button>
+                <button class="control-btn" data-action="play_pause">⏯️ 播放/暫停</button>
+                <button class="control-btn" data-action="next_track">⏭️ 下一首</button>
+                <button class="control-btn" data-action="prev_track">⏮️ 上一首</button>
+                <button class="control-btn" data-action="mute">🔇 靜音</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 簡報控制模式 -->
+    <div id="presentation-mode" class="mode-container">
+        <div class="remote-control">
+            <h2>簡報控制</h2>
+            <div class="control-grid">
+                <button class="control-btn" data-action="start_slideshow">▶️ 開始簡報</button>
+                <button class="control-btn" data-action="next_slide">➡️ 下一頁</button>
+                <button class="control-btn" data-action="prev_slide">⬅️ 上一頁</button>
+                <button class="control-btn" data-action="end_slideshow">⏹️ 結束簡報</button>
+                <button class="control-btn" data-action="laser_pointer">🔴 雷射筆</button>
+                <button class="control-btn" data-action="black_screen">⚫ 黑屏</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 應用程式模式 -->
+    <div id="apps-mode" class="mode-container">
+        <div class="remote-control">
+            <h2>應用程式</h2>
+            <div class="control-grid">
+                <button class="control-btn" data-action="chrome">🌐 Chrome</button>
+                <button class="control-btn" data-action="vscode">💻 VS Code</button>
+                <button class="control-btn" data-action="notepad">📝 記事本</button>
+                <button class="control-btn" data-action="calculator">🧮 計算機</button>
+                <button class="control-btn" data-action="explorer">📁 檔案總管</button>
+                <button class="control-btn" data-action="task_manager">⚙️ 工作管理員</button>
+            </div>
+        </div>
+    </div>
+
     <!-- socket.io client (served by Flask-SocketIO) -->
     <script src="/socket.io/socket.io.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // 系統控制函數
+        function sendSystemCommand(action) {
+            socket.emit('system', { action: action });
+        }
+
+        function sendKeyboardCommand(keys) {
+            socket.emit('keyboard', { keys: keys });
+        }
+    </script>
 </body>
 </html>
