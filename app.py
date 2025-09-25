@@ -51,7 +51,7 @@ if socketio is None:
             return decorator
         def emit(self, *args, **kwargs):
             return None
-        def run(self, app, host='0.0.0.0', port=5000, debug=False):
+        def run(self, app, host='0.0.0.0', port=51273, debug=False):
             # Run plain Flask server
             app.run(host=host, port=port, debug=debug)
     socketio = StubSocketIO()
@@ -93,7 +93,7 @@ SCROLL_ACCEL_CAP = 2000.0
 # within this timeout, the server will auto-release to avoid a stuck mouse state.
 DOUBLE_TAP_HOLD_TIMEOUT_MS = 3000
 # Double-tap timing: max interval between taps and hold trigger duration
-DOUBLE_TAP_MAX_INTERVAL_MS = 400
+DOUBLE_TAP_MAX_INTERVAL_MS = 200
 DOUBLE_TAP_HOLD_TRIGGER_MS = 200
 
 # Get screen size for scaling. Prefer virtual screen on Windows so multiple
@@ -684,6 +684,72 @@ def on_client_disconnect():
         print(f"Socket disconnected: sid={sid}")
     except Exception as e:
         print('disconnect handler error', e)
+
+
+def force_release_all_holds():
+    """Force release any server-tracked mouse holds and clear state flags.
+
+    This helps when a client disconnects unexpectedly or the server
+    didn't receive an explicit 'mouseup'. It calls pyautogui.mouseUp()
+    (which is no-op if mouse isn't held) and clears the per-connection
+    double-tap hold flags so future interactions are clean.
+    """
+    try:
+        # Attempt to release any OS-level mouse hold
+        try:
+            pyautogui.mouseUp()
+        except Exception:
+            pass
+        # Clear internal flags for all connections
+        now_ms = time.time() * 1000
+        for sid_key, st in list(touch_state.items()):
+            try:
+                if st.get('doubleTapHoldActive'):
+                    st['doubleTapHoldActive'] = False
+                st['lastMouseDownTime'] = 0
+                st['lastMouseDownSid'] = None
+                st['doubleTapExpectHold'] = False
+                st['pendingDoubleTap'] = False
+            except Exception:
+                pass
+    except Exception as e:
+        print('force_release_all_holds error', e)
+
+
+# Watchdog thread to auto-release stale holds in case clients disconnect or
+# fail to send mouseup events. Runs every 0.5s and releases holds that
+# exceeded DOUBLE_TAP_HOLD_TIMEOUT_MS.
+def _hold_watchdog_loop(interval=0.5):
+    while True:
+        try:
+            now_ms = time.time() * 1000
+            for sid_key, st in list(touch_state.items()):
+                try:
+                    if st.get('doubleTapHoldActive') and st.get('lastMouseDownTime', 0):
+                        if (now_ms - st.get('lastMouseDownTime', 0)) > DOUBLE_TAP_HOLD_TIMEOUT_MS:
+                            try:
+                                pyautogui.mouseUp()
+                            except Exception:
+                                pass
+                            st['doubleTapHoldActive'] = False
+                            st['lastMouseDownTime'] = 0
+                            st['lastMouseDownSid'] = None
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            time.sleep(interval)
+        except Exception:
+            break
+
+
+# Start watchdog thread as a daemon so it doesn't block shutdown
+try:
+    watchdog_thread = threading.Thread(target=_hold_watchdog_loop, args=(), daemon=True)
+    watchdog_thread.start()
+except Exception:
+    pass
 
 
 @app.route('/raw', methods=['POST'])

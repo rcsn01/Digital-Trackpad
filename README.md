@@ -34,8 +34,8 @@ The server will start and display your local IP address. You'll see output like:
 
 ```
 Starting trackpad server...
-Access from your phone at: http://192.168.1.100:5000
-Or access locally at: http://localhost:5000
+Access from your phone at: http://192.168.1.100:51273
+Or access locally at: http://localhost:51273
 Screen size detected: 1920x1080
 ```
 
