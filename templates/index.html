@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-    <title>萬能PC遙控器</title>
+    <title>Universal PC Remote</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
         /* Minimal inline safety styles to ensure full-screen trackpad if external CSS missing */
@@ -12,60 +12,60 @@
     </style>
 </head>
 <body>
-    <!-- 模式切換按鈕 -->
+    <!-- Mode switcher buttons -->
     <div id="mode-switcher" class="mode-switcher">
-        <button class="mode-btn active" data-mode="trackpad">觸控板</button>
-        <button class="mode-btn" data-mode="media">媒體控制</button>
-        <button class="mode-btn" data-mode="presentation">簡報控制</button>
-        <button class="mode-btn" data-mode="apps">應用程式</button>
+        <button class="mode-btn active" data-mode="trackpad">Trackpad</button>
+        <button class="mode-btn" data-mode="media">Media Control</button>
+        <button class="mode-btn" data-mode="presentation">Presentation</button>
+        <button class="mode-btn" data-mode="apps">Applications</button>
     </div>
 
-    <!-- 觸控板模式 -->
+    <!-- Trackpad mode -->
     <div id="trackpad-mode" class="mode-container active">
         <div id="trackpad" aria-label="Trackpad"></div>
     </div>
 
-    <!-- 媒體控制模式 -->
+    <!-- Media control mode -->
     <div id="media-mode" class="mode-container">
         <div class="remote-control">
-            <h2>媒體控制</h2>
+            <h2>Media Control</h2>
             <div class="control-grid">
-                <button class="control-btn" data-action="volume_up">🔊 音量+</button>
-                <button class="control-btn" data-action="volume_down">🔉 音量-</button>
-                <button class="control-btn" data-action="play_pause">⏯️ 播放/暫停</button>
-                <button class="control-btn" data-action="next_track">⏭️ 下一首</button>
-                <button class="control-btn" data-action="prev_track">⏮️ 上一首</button>
-                <button class="control-btn" data-action="mute">🔇 靜音</button>
+                <button class="control-btn" data-action="volume_up">🔊 Volume +</button>
+                <button class="control-btn" data-action="volume_down">🔉 Volume -</button>
+                <button class="control-btn" data-action="play_pause">⏯️ Play/Pause</button>
+                <button class="control-btn" data-action="next_track">⏭️ Next Track</button>
+                <button class="control-btn" data-action="prev_track">⏮️ Previous Track</button>
+                <button class="control-btn" data-action="mute">🔇 Mute</button>
             </div>
         </div>
     </div>
 
-    <!-- 簡報控制模式 -->
+    <!-- Presentation control mode -->
     <div id="presentation-mode" class="mode-container">
         <div class="remote-control">
-            <h2>簡報控制</h2>
+            <h2>Presentation Control</h2>
             <div class="control-grid">
-                <button class="control-btn" data-action="start_slideshow">▶️ 開始簡報</button>
-                <button class="control-btn" data-action="next_slide">➡️ 下一頁</button>
-                <button class="control-btn" data-action="prev_slide">⬅️ 上一頁</button>
-                <button class="control-btn" data-action="end_slideshow">⏹️ 結束簡報</button>
-                <button class="control-btn" data-action="laser_pointer">🔴 雷射筆</button>
-                <button class="control-btn" data-action="black_screen">⚫ 黑屏</button>
+                <button class="control-btn" data-action="start_slideshow">▶️ Start Slideshow</button>
+                <button class="control-btn" data-action="next_slide">➡️ Next Slide</button>
+                <button class="control-btn" data-action="prev_slide">⬅️ Previous Slide</button>
+                <button class="control-btn" data-action="end_slideshow">⏹️ End Slideshow</button>
+                <button class="control-btn" data-action="laser_pointer">🔴 Laser Pointer</button>
+                <button class="control-btn" data-action="black_screen">⚫ Black Screen</button>
             </div>
         </div>
     </div>
 
-    <!-- 應用程式模式 -->
+    <!-- Applications mode -->
     <div id="apps-mode" class="mode-container">
         <div class="remote-control">
-            <h2>應用程式</h2>
+            <h2>Applications</h2>
             <div class="control-grid">
                 <button class="control-btn" data-action="chrome">🌐 Chrome</button>
                 <button class="control-btn" data-action="vscode">💻 VS Code</button>
-                <button class="control-btn" data-action="notepad">📝 記事本</button>
-                <button class="control-btn" data-action="calculator">🧮 計算機</button>
-                <button class="control-btn" data-action="explorer">📁 檔案總管</button>
-                <button class="control-btn" data-action="task_manager">⚙️ 工作管理員</button>
+                <button class="control-btn" data-action="notepad">📝 Notepad</button>
+                <button class="control-btn" data-action="calculator">🧮 Calculator</button>
+                <button class="control-btn" data-action="explorer">📁 File Explorer</button>
+                <button class="control-btn" data-action="task_manager">⚙️ Task Manager</button>
             </div>
         </div>
     </div>
@@ -74,7 +74,7 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
     <script>
-        // 系統控制函數
+        // System control functions
         function sendSystemCommand(action) {
             socket.emit('system', { action: action });
         }

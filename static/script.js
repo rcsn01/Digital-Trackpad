@@ -1,9 +1,9 @@
-// 萬能PC遙控器 - 多模式控制客戶端
-// 功能：
-// - 觸控板模式：滑鼠移動、點擊、滾動
-// - 媒體控制模式：音量、播放控制
-// - 簡報控制模式：簡報導航
-// - 應用程式模式：快速啟動應用程式
+// Universal PC Remote - Multi-mode Control Client
+// Features:
+// - Trackpad mode: mouse movement, clicking, scrolling
+// - Media control mode: volume, playback control
+// - Presentation mode: presentation navigation
+// - Applications mode: quick app launch
 
 class UniversalRemote {
     constructor() {
@@ -22,10 +22,10 @@ class UniversalRemote {
             if (typeof io === 'function') {
                 this.socket = io();
                 this.socket.on('connect', () => {
-                    console.log('Socket連接成功');
+                    console.log('Socket connection successful');
                 });
                 this.socket.on('disconnect', () => {
-                    console.log('Socket連接斷開');
+                    console.log('Socket connection disconnected');
                 });
             }
         } catch (e) {
@@ -41,28 +41,28 @@ class UniversalRemote {
             btn.addEventListener('click', () => {
                 const mode = btn.dataset.mode;
                 
-                // 更新按鈕狀態
+                // Update button states
                 modeButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 
-                // 更新模式容器
+                // Update mode containers
                 modeContainers.forEach(container => {
                     container.classList.remove('active');
                 });
                 document.getElementById(`${mode}-mode`).classList.add('active');
                 
                 this.currentMode = mode;
-                console.log(`切換到${this.getModeName(mode)}模式`);
+                console.log(`Switched to ${this.getModeName(mode)} mode`);
             });
         });
     }
     
     getModeName(mode) {
         const names = {
-            'trackpad': '觸控板',
-            'media': '媒體控制',
-            'presentation': '簡報控制',
-            'apps': '應用程式'
+            'trackpad': 'Trackpad',
+            'media': 'Media Control',
+            'presentation': 'Presentation Control',
+            'apps': 'Applications'
         };
         return names[mode] || mode;
     }
@@ -70,12 +70,12 @@ class UniversalRemote {
     initTrackpad() {
         this.trackpad = new PhoneTrackpad(this.socket);
         
-        // 綁定控制按鈕事件
+        // Bind control button events
         this.bindControlButtons();
     }
     
     bindControlButtons() {
-        // 媒體控制
+        // Media control
         document.querySelectorAll('[data-media]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const action = btn.dataset.media;
@@ -84,7 +84,7 @@ class UniversalRemote {
             });
         });
         
-        // 簡報控制
+        // Presentation control
         document.querySelectorAll('[data-presentation]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const action = btn.dataset.presentation;
@@ -93,7 +93,7 @@ class UniversalRemote {
             });
         });
         
-        // 應用程式控制
+        // Application control
         document.querySelectorAll('[data-app]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const app = btn.dataset.app;
@@ -102,7 +102,7 @@ class UniversalRemote {
             });
         });
         
-        // 鍵盤快捷鍵
+        // Keyboard shortcuts
         document.querySelectorAll('[data-keyboard]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const key = btn.dataset.keyboard;
@@ -111,7 +111,7 @@ class UniversalRemote {
             });
         });
         
-        // 系統控制
+        // System control
         document.querySelectorAll('[data-system]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const action = btn.dataset.system;
@@ -127,7 +127,7 @@ class UniversalRemote {
     }
     
     initRemoteControls() {
-        // 媒體控制
+        // Media control
         const mediaButtons = document.querySelectorAll('#media-mode .control-btn');
         mediaButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -136,7 +136,7 @@ class UniversalRemote {
             });
         });
         
-        // 簡報控制
+        // Presentation control
         const presentationButtons = document.querySelectorAll('#presentation-mode .control-btn');
         presentationButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -145,7 +145,7 @@ class UniversalRemote {
             });
         });
         
-        // 應用程式控制
+        // Application control
         const appButtons = document.querySelectorAll('#apps-mode .control-btn');
         appButtons.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -215,7 +215,7 @@ class UniversalRemote {
     }
 }
 
-// 觸控板類別
+// Trackpad class
 class PhoneTrackpad {
     constructor(socket) {
         this.trackpad = document.getElementById('trackpad');
@@ -658,7 +658,7 @@ class PhoneTrackpad {
 
 window.addEventListener('DOMContentLoaded', () => {
     const remote = new UniversalRemote();
-    // 暴露給控制台調試
+    // Expose for console debugging
     window.universalRemote = remote;
 });
 

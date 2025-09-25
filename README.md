@@ -1,143 +1,143 @@
-# 萬能PC遙控器 - 使用說明
+# Universal PC Remote - User Guide
 
-## 🎯 專案簡介
+## 🎯 Project Overview
 
-這是一個基於網頁的PC遙控器應用程式，讓您可以透過手機或平板電腦遠端控制您的Windows電腦。
+This is a web-based PC remote control application that allows you to remotely control your Windows computer through your phone or tablet.
 
-## ✨ 主要功能
+## ✨ Main Features
 
-### 1. 觸控板控制
-- **滑鼠移動**: 在觸控區域滑動即可控制滑鼠游標
-- **左鍵點擊**: 單指輕觸
-- **右鍵點擊**: 雙指輕觸
-- **滾動**: 雙指滑動
+### 1. Trackpad Control
+- **Mouse Movement**: Swipe on the touch area to control the mouse cursor
+- **Left Click**: Single finger tap
+- **Right Click**: Two-finger tap
+- **Scrolling**: Two-finger swipe
 
-### 2. 媒體控制
-- 播放/暫停 ⏯️
-- 上一首/下一首 ⏮️⏭️
-- 音量調整 🔊🔉
-- 靜音 🔇
+### 2. Media Control
+- Play/Pause ⏯️
+- Previous/Next ⏮️⏭️
+- Volume Adjustment 🔊🔉
+- Mute 🔇
 
-### 3. 簡報控制
-- 上一頁/下一頁 ⬅️➡️
-- 開始簡報 ▶️
-- 結束簡報 ⏹️
+### 3. Presentation Control
+- Previous/Next Page ⬅️➡️
+- Start Presentation ▶️
+- End Presentation ⏹️
 
-### 4. 應用程式控制
-- 開啟 Chrome 🌐
-- 開啟記事本 📝
-- 開啟計算機 🧮
-- 開啟檔案總管 📁
+### 4. Application Control
+- Open Chrome 🌐
+- Open Notepad 📝
+- Open Calculator 🧮
+- Open File Explorer 📁
 
-### 5. 系統控制
-- 系統睡眠 😴
-- 關機 🔄
-- 重新啟動 🔄
-- 顯示桌面 🖥️
-- 切換視窗 🔄
-- 鎖定電腦 🔒
+### 5. System Control
+- System Sleep 😴
+- Shutdown 🔄
+- Restart 🔄
+- Show Desktop 🖥️
+- Switch Window 🔄
+- Lock Computer 🔒
 
-### 6. 鍵盤輸入
-- 文字輸入
-- 快捷鍵發送
+### 6. Keyboard Input
+- Text input
+- Shortcut key sending
 
-### 7. 自訂按鈕 (新功能) 🎛️
-- 建立個人化快捷按鈕
-- 支援多種控制類型
-- 可儲存和載入配置
+### 7. Custom Buttons (New Feature) 🎛️
+- Create personalized shortcut buttons
+- Support multiple control types
+- Save and load configurations
 
-## 🚀 快速開始
+## 🚀 Quick Start
 
-### 安裝需求
+### Installation Requirements
 - Python 3.7+
-- Windows 作業系統
+- Windows operating system
 
-### 安裝步驟
-1. 安裝 Python 依賴套件：
+### Installation Steps
+1. Install Python dependencies:
 ```bash
 pip install flask flask-socketio pyautogui
 ```
 
-2. 執行應用程式：
+2. Run the application:
 ```bash
 python app.py
 ```
 
-3. 開啟瀏覽器，前往：
+3. Open browser and navigate to:
 ```
 http://localhost:5000
 ```
 
-### 網路存取
-如果您想從其他裝置存取：
+### Network Access
+If you want to access from other devices:
 ```
-http://[您的IP位址]:5000
+http://[Your IP Address]:5000
 ```
 
-## 📱 使用說明
+## 📱 Usage Instructions
 
-### 基本操作
-1. **連接到伺服器**: 確保您的手機和電腦在同一網路下
-2. **選擇控制模式**: 點擊上方的模式按鈕切換不同功能
-3. **使用控制功能**: 根據選擇的模式使用相應的控制按鈕
+### Basic Operation
+1. **Connect to Server**: Ensure your phone and computer are on the same network
+2. **Select Control Mode**: Click the mode buttons at the top to switch between different functions
+3. **Use Control Features**: Use the corresponding control buttons according to the selected mode
 
-### 自訂按鈕設定
-1. 點擊主頁面的「自訂按鈕設定」按鈕
-2. 選擇預設範本或建立新按鈕
-3. 設定按鈕名稱、圖示和功能
-4. 儲存配置並返回主頁面使用
+### Custom Button Settings
+1. Click the "Custom Button Settings" button on the main page
+2. Choose preset templates or create new buttons
+3. Set button name, icon, and function
+4. Save configuration and return to main page to use
 
-## 🔧 技術架構
+## 🔧 Technical Architecture
 
-### 後端
-- **Flask**: Web框架
-- **Flask-SocketIO**: 即時雙向通訊
-- **PyAutoGUI**: 系統控制自動化
+### Backend
+- **Flask**: Web framework
+- **Flask-SocketIO**: Real-time bidirectional communication
+- **PyAutoGUI**: System control automation
 
-### 前端
-- **HTML5/CSS3**: 響應式介面
-- **JavaScript**: 互動邏輯
-- **Socket.IO**: 即時通訊
+### Frontend
+- **HTML5/CSS3**: Responsive interface
+- **JavaScript**: Interactive logic
+- **Socket.IO**: Real-time communication
 
-### 支援的瀏覽器
+### Supported Browsers
 - Chrome/Chromium
 - Firefox
 - Safari
 - Edge
 
-## ⚠️ 安全提示
+## ⚠️ Security Tips
 
-1. **網路安全**: 僅在受信任的網路環境中使用
-2. **防火牆**: 確保防火牆允許所需端口
-3. **權限**: 某些功能可能需要管理員權限
+1. **Network Security**: Only use in trusted network environments
+2. **Firewall**: Ensure firewall allows required ports
+3. **Permissions**: Some features may require administrator privileges
 
-## 🐛 故障排除
+## 🐛 Troubleshooting
 
-### 連接問題
-- 檢查防火牆設置
-- 確認IP位址正確
-- 確保端口5000未被佔用
+### Connection Issues
+- Check firewall settings
+- Confirm IP address is correct
+- Ensure port 5000 is not occupied
 
-### 功能問題
-- 檢查Python依賴是否安裝完整
-- 確認Windows權限設置
-- 查看控制台錯誤訊息
+### Function Issues
+- Check if Python dependencies are fully installed
+- Confirm Windows permission settings
+- Check console error messages
 
-## 📞 支援
+## 📞 Support
 
-如有問題，請檢查控制台錯誤訊息或查看應用程式日誌。
+For issues, please check console error messages or view application logs.
 
-## 📝 版本歷史
+## 📝 Version History
 
-- v1.0.0: 基礎功能完成
-  - 觸控板控制
-  - 媒體控制
-  - 簡報控制
-  - 應用程式控制
-  - 系統控制
-  - 鍵盤輸入
-  - 自訂按鈕功能
+- v1.0.0: Basic functionality completed
+  - Trackpad control
+  - Media control
+  - Presentation control
+  - Application control
+  - System control
+  - Keyboard input
+  - Custom button feature
 
 ---
 
-**享受您的萬能PC遙控器體驗！** 🎉
+**Enjoy your Universal PC Remote experience!** 🎉

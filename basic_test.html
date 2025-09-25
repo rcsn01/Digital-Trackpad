@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>基本測試</title>
+    <title>Basic Test</title>
     <style>
         body { font-family: Arial; padding: 20px; }
         button { padding: 10px; margin: 5px; font-size: 16px; }
@@ -11,42 +11,42 @@
     </style>
 </head>
 <body>
-    <h1>萬能PC遙控器 - 基本測試</h1>
+    <h1>Universal PC Remote - Basic Test</h1>
     
-    <h3>模式切換</h3>
-    <button class="mode-btn" onclick="switchMode('trackpad')">觸控板</button>
-    <button class="mode-btn" onclick="switchMode('media')">媒體</button>
-    <button class="mode-btn" onclick="switchMode('presentation')">簡報</button>
-    <button class="mode-btn" onclick="switchMode('apps')">應用程式</button>
+    <h3>Mode Switching</h3>
+    <button class="mode-btn" onclick="switchMode('trackpad')">Trackpad</button>
+    <button class="mode-btn" onclick="switchMode('media')">Media</button>
+    <button class="mode-btn" onclick="switchMode('presentation')">Presentation</button>
+    <button class="mode-btn" onclick="switchMode('apps')">Applications</button>
     
-    <h3>控制按鈕</h3>
-    <button class="control-btn" onclick="sendCommand('test')">測試命令</button>
-    <button class="control-btn" onclick="sendMediaCommand('play_pause')">播放/暫停</button>
-    <button class="control-btn" onclick="sendPresentationCommand('next_slide')">下一頁</button>
+    <h3>Control Buttons</h3>
+    <button class="control-btn" onclick="sendCommand('test')">Test Command</button>
+    <button class="control-btn" onclick="sendMediaCommand('play_pause')">Play/Pause</button>
+    <button class="control-btn" onclick="sendPresentationCommand('next_slide')">Next Page</button>
     
-    <div id="status">狀態: <span id="status-text">就緒</span></div>
+    <div id="status">Status: <span id="status-text">Ready</span></div>
     
     <script>
         function switchMode(mode) {
-            updateStatus('切換到 ' + mode + ' 模式');
+            updateStatus('Switched to ' + mode + ' mode');
         }
         
         function sendCommand(cmd) {
-            updateStatus('發送命令: ' + cmd);
+            updateStatus('Sending command: ' + cmd);
         }
         
         function sendMediaCommand(cmd) {
-            updateStatus('發送媒體命令: ' + cmd);
+            updateStatus('Sending media command: ' + cmd);
         }
         
         function sendPresentationCommand(cmd) {
-            updateStatus('發送簡報命令: ' + cmd);
+            updateStatus('Sending presentation command: ' + cmd);
         }
         
         function updateStatus(msg) {
             document.getElementById('status-text').textContent = msg;
             setTimeout(() => {
-                document.getElementById('status-text').textContent = '就緒';
+                document.getElementById('status-text').textContent = 'Ready';
             }, 2000);
         }
     </script>

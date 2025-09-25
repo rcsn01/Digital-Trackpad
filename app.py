@@ -63,10 +63,12 @@ scroll_lock = threading.Lock()
 
 @app.route('/')
 def index():
+    """Main page - renders the trackpad interface"""
     return render_template('index.html')
 
 @app.route('/move', methods=['POST'])
 def move_mouse():
+    """Move mouse cursor to specified coordinates"""
     try:
         data = request.json
         delta_x = float(data.get('deltaX', 0))
@@ -92,6 +94,7 @@ def move_mouse():
 
 @app.route('/click', methods=['POST'])
 def click_mouse():
+    """Perform mouse click actions"""
     try:
         data = request.json
         button = data.get('button', 'left')  # left, right, middle
@@ -109,6 +112,7 @@ def click_mouse():
 
 @app.route('/scroll', methods=['POST'])
 def scroll_mouse():
+    """Handle mouse scroll wheel input with fractional accumulation"""
     try:
         data = request.json
         scroll_x = float(data.get('scrollX', 0))
@@ -176,10 +180,9 @@ def scroll_mouse():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-
 @app.route('/media', methods=['POST'])
 def media_control():
-    """媒體控制功能 - 播放/暫停、音量控制等"""
+    """Media control functionality - play/pause, volume control, etc."""
     try:
         data = request.json
         action = data.get('action', '')
@@ -187,7 +190,7 @@ def media_control():
         if action in MEDIA_CONTROLS:
             key = MEDIA_CONTROLS[action]
             if action == 'play_pause':
-                # 特殊處理播放暫停，需要根據當前應用程式
+                # Special handling for play/pause, depends on current application
                 pyautogui.press(key)
             else:
                 pyautogui.press(key)
@@ -197,10 +200,9 @@ def media_control():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-
 @app.route('/presentation', methods=['POST'])
 def presentation_control():
-    """簡報控制功能 - 投影片切換、開始簡報等"""
+    """Presentation control functionality - slide navigation, start presentation, etc."""
     try:
         data = request.json
         action = data.get('action', '')
@@ -214,10 +216,9 @@ def presentation_control():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-
 @app.route('/app', methods=['POST'])
 def app_control():
-    """應用程式控制 - 切換和開啟常用程式"""
+    """Application control - switch and launch common applications"""
     try:
         data = request.json
         app_name = data.get('app', '')
@@ -225,13 +226,13 @@ def app_control():
         if app_name in APP_SHORTCUTS:
             keys = APP_SHORTCUTS[app_name]
             if app_name == 'calculator':
-                # 特殊處理小算盤 - Win+R 然後輸入 calc
+                # Special handling for calculator - Win+R then type calc
                 pyautogui.hotkey('win', 'r')
                 time.sleep(0.5)
                 pyautogui.typewrite('calc')
                 pyautogui.press('enter')
             elif app_name == 'notepad':
-                # 特殊處理記事本 - Win+R 然後輸入 notepad
+                # Special handling for notepad - Win+R then type notepad
                 pyautogui.hotkey('win', 'r')
                 time.sleep(0.5)
                 pyautogui.typewrite('notepad')
@@ -244,10 +245,9 @@ def app_control():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-
 @app.route('/keyboard', methods=['POST'])
 def keyboard_control():
-    """鍵盤快捷鍵控制 - 自訂按鍵組合"""
+    """Keyboard shortcut control - custom key combinations"""
     try:
         data = request.json
         keys = data.get('keys', [])
@@ -260,10 +260,9 @@ def keyboard_control():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-
 @app.route('/system', methods=['POST'])
 def system_control():
-    """系統控制 - 關機、重啟、睡眠等"""
+    """System control - sleep, shutdown, restart, etc."""
     try:
         data = request.json
         action = data.get('action', '')
@@ -291,10 +290,10 @@ def system_control():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
 
-
 # SocketIO handlers - lower-latency path (client will emit these when connected)
 @socketio.on('move')
 def on_move(data):
+    """WebSocket mouse movement handler"""
     try:
         dx = float(data.get('deltaX', 0))
         dy = float(data.get('deltaY', 0))
@@ -307,9 +306,9 @@ def on_move(data):
     except Exception as e:
         print('on_move error', e)
 
-
 @socketio.on('click')
 def on_click(data):
+    """WebSocket mouse click handler"""
     try:
         button = data.get('button', 'left')
         if button == 'left':
@@ -321,9 +320,9 @@ def on_click(data):
     except Exception as e:
         print('on_click error', e)
 
-
 @socketio.on('scroll')
 def on_scroll(data):
+    """WebSocket mouse scroll handler with fractional accumulation"""
     try:
         scroll_x = float(data.get('scrollX', 0))
         scroll_y = float(data.get('scrollY', 0))
@@ -379,11 +378,10 @@ def on_scroll(data):
     except Exception as e:
         print('on_scroll error', e)
 
-
 # SocketIO handlers for universal remote
 @socketio.on('media')
 def on_media(data):
-    """WebSocket 媒體控制"""
+    """WebSocket media control handler"""
     try:
         action = data.get('action', '')
         if action in MEDIA_CONTROLS:
@@ -395,10 +393,9 @@ def on_media(data):
     except Exception as e:
         print(f'[Media] Error: {e}')
 
-
 @socketio.on('presentation')
 def on_presentation(data):
-    """WebSocket 簡報控制"""
+    """WebSocket presentation control handler"""
     try:
         action = data.get('action', '')
         if action in PRESENTATION_CONTROLS:
@@ -410,10 +407,9 @@ def on_presentation(data):
     except Exception as e:
         print(f'[Presentation] Error: {e}')
 
-
 @socketio.on('app')
 def on_app(data):
-    """WebSocket 應用程式控制"""
+    """WebSocket application control handler"""
     try:
         app_name = data.get('app', '')
         if app_name in APP_SHORTCUTS:
@@ -438,10 +434,9 @@ def on_app(data):
     except Exception as e:
         print(f'[App] Error: {e}')
 
-
 @socketio.on('keyboard')
 def on_keyboard(data):
-    """WebSocket 鍵盤快捷鍵"""
+    """WebSocket keyboard shortcut handler"""
     try:
         keys = data.get('keys', [])
         if keys:
@@ -452,10 +447,9 @@ def on_keyboard(data):
     except Exception as e:
         print(f'[Keyboard] Error: {e}')
 
-
 @socketio.on('system')
 def on_system(data):
-    """WebSocket 系統控制"""
+    """WebSocket system control handler"""
     try:
         action = data.get('action', '')
         if action == 'sleep':
@@ -484,6 +478,7 @@ def on_system(data):
 
 @app.route('/drag', methods=['POST'])
 def drag_mouse():
+    """Perform mouse drag operation"""
     try:
         data = request.json
         start_x = float(data.get('startX', 0))
