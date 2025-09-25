@@ -23,6 +23,19 @@ from flask_socketio import SocketIO
 base_dir = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
 app = Flask(__name__, static_folder=os.path.join(base_dir, 'static'), template_folder=os.path.join(base_dir, 'templates'))
 import traceback
+import logging
+try:
+    # Monkey-patch Werkzeug serving logger to suppress access log lines with date/time
+    from werkzeug import serving as _wz_serving
+    _wz_serving._log = lambda *args, **kwargs: None  # type: ignore[attr-defined]
+except Exception:
+    pass
+
+# Suppress verbose Werkzeg access logs (date/time, status lines) to keep console clean
+try:
+    logging.getLogger('werkzeug').setLevel(logging.WARNING)
+except Exception:
+    pass
 
 # Try to initialize SocketIO with a list of candidate async modes. If none
 # succeed (common when the bundled environment is missing or incompatible
@@ -34,7 +47,7 @@ socketio = None
 async_candidates = ['eventlet', 'gevent', 'threading', 'asyncio']
 for mode in async_candidates:
     try:
-        socketio = SocketIO(app, cors_allowed_origins='*', async_mode=mode)
+        socketio = SocketIO(app, cors_allowed_origins='*', async_mode=mode, logger=False, engineio_logger=False)
         print(f"SocketIO initialized with async_mode={mode}")
         break
     except Exception as e:
@@ -58,16 +71,27 @@ if socketio is None:
 
 # Configure pyautogui
 pyautogui.FAILSAFE = True  # Move mouse to corner to stop
-pyautogui.PAUSE = 0.001   # Small pause between commands
+pyautogui.PAUSE = 0.0001   # Small pause between commands
 
 # Server-side multiplier for incoming fractional scroll values. Increase if scroll feels weak.
 SCROLL_MULTIPLIER = 2
 # Server-side multiplier for incoming move deltas. Increase to amplify movement,
 # decrease to make movement less sensitive. Client already applies sensitivity,
 # but a server multiplier lets the server globally tune responsiveness.
-MOVE_MULTIPLIER = 3
+MOVE_MULTIPLIER = 0.1
+# Mouse acceleration settings (tweak to taste)
+# BASE_SPEED_SCALE: baseline multiplier applied regardless of speed
+# ACCEL_EXPONENT: exponent used in the acceleration curve (values >1 increase acceleration)
+# ACCELERATION_FACTOR: scales the speed before applying exponent
+# ACCEL_CAP: maximum multiplier allowed to avoid runaway motion
+BASE_SPEED_SCALE = 0.2
+ACCEL_EXPONENT = 1.1
+ACCELERATION_FACTOR = 0.2
+ACCEL_CAP = 40.0
 # Toggle to print incoming scroll payloads (for troubleshooting); set False to silence
 SCROLL_DEBUG = False
+# Toggle to print incoming raw touch positions (down/move/up)
+RAW_DEBUG = False
 # If accumulated fractional scroll (after multiplying) exceeds this small value,
 # force one wheel step in the appropriate direction. Helps small gestures move the page.
 MIN_SCROLL_FRAC_TO_STEP = 0.05
@@ -351,46 +375,75 @@ touch_state = {}
 
 def process_move_delta(delta_x, delta_y):
     """Apply a raw delta (in client pixels) to the host mouse using server-side
-    accumulation, multiplier, and virtual-screen clamping.
+    multiplier and virtual-screen clamping. Always reflect any non-zero input
+    immediately with at least a 1-pixel step in the appropriate direction.
     """
     try:
-        dx_apply = 0
-        dy_apply = 0
+        # Time sampling
+        now = time.time()
+        last = getattr(process_move_delta, '_last_time', None)
+        dt = 0.016 if last is None else max(1e-4, now - last)
+        process_move_delta._last_time = now
+
+        # Localize globals and math functions for speed
+        mv_mul = MOVE_MULTIPLIER
+        accel_factor = ACCELERATION_FACTOR
+        accel_exp = ACCEL_EXPONENT
+        base_scale = BASE_SPEED_SCALE
+        cap = ACCEL_CAP
+
+        # Scale raw client deltas
+        dx_raw = float(delta_x) * mv_mul
+        dy_raw = float(delta_y) * mv_mul
+
+        # Speed magnitude (pixels/sec)
+        speed = math.hypot(dx_raw, dy_raw) / dt if dt > 0 else 0.0
+
+        # Acceleration multiplier (fast path for speed == 0 avoids pow)
+        if speed > 0.0:
+            accel_mult = base_scale + (accel_factor * speed) ** accel_exp
+            if accel_mult > cap:
+                accel_mult = cap
+        else:
+            accel_mult = base_scale
+
+        dx_acc = dx_raw * accel_mult
+        dy_acc = dy_raw * accel_mult
+
+        # Accumulate and apply integer steps under lock
         with move_lock:
             global move_accum_x, move_accum_y
-            move_accum_x += float(delta_x) * MOVE_MULTIPLIER
-            move_accum_y += float(delta_y) * MOVE_MULTIPLIER
+            move_accum_x += dx_acc
+            move_accum_y += dy_acc
 
-            step_x = int(move_accum_x)
-            step_y = int(move_accum_y)
+            # Use rounding to nearest to reduce bias for small fractions
+            dx_apply = int(round(move_accum_x))
+            dy_apply = int(round(move_accum_y))
 
-            if step_x != 0:
-                dx_apply = step_x
-                move_accum_x -= step_x
-            else:
-                if abs(move_accum_x) >= MIN_MOVE_FRAC_TO_STEP:
-                    step = int(math.copysign(1, move_accum_x))
-                    dx_apply = step
-                    move_accum_x -= step
+            # Ensure minimal step when fractional accumulation passes threshold
+            if dx_apply == 0 and abs(move_accum_x) >= MIN_MOVE_FRAC_TO_STEP:
+                dx_apply = int(math.copysign(1, move_accum_x))
+            if dy_apply == 0 and abs(move_accum_y) >= MIN_MOVE_FRAC_TO_STEP:
+                dy_apply = int(math.copysign(1, move_accum_y))
 
-            if step_y != 0:
-                dy_apply = step_y
-                move_accum_y -= step_y
-            else:
-                if abs(move_accum_y) >= MIN_MOVE_FRAC_TO_STEP:
-                    step = int(math.copysign(1, move_accum_y))
-                    dy_apply = step
-                    move_accum_y -= step
+            if dx_apply != 0:
+                move_accum_x -= dx_apply
+            if dy_apply != 0:
+                move_accum_y -= dy_apply
 
         if dx_apply != 0 or dy_apply != 0:
-            current_x, current_y = pyautogui.position()
-            new_x = current_x + dx_apply
-            new_y = current_y + dy_apply
+            cx, cy = pyautogui.position()
+            nx = cx + dx_apply
+            ny = cy + dy_apply
             # Clamp to virtual screen bounds
-            new_x = max(virtual_left, min(virtual_left + screen_width - 1, new_x))
-            new_y = max(virtual_top, min(virtual_top + screen_height - 1, new_y))
-            pyautogui.moveTo(new_x, new_y)
+            nx = max(virtual_left, min(virtual_left + screen_width - 1, nx))
+            ny = max(virtual_top, min(virtual_top + screen_height - 1, ny))
+            try:
+                pyautogui.moveTo(nx, ny)
+            except Exception:
+                pass
     except Exception as e:
+        # Keep a minimal, non-throwing error path
         print('process_move_delta error', e)
 
 
@@ -408,6 +461,11 @@ def _get_sid_for_http():
 
 def process_raw_down(data, sid_key):
     try:
+        if RAW_DEBUG:
+            try:
+                print(f"down id={data.get('id')} x={float(data.get('x', 0)):.1f} y={float(data.get('y', 0)):.1f}")
+            except Exception:
+                pass
         st = touch_state.setdefault(sid_key, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None, 'lastTapTime': 0, 'pendingDoubleTap': False})
         # Clear any stale pending double-tap marker
         now_ms = time.time() * 1000
@@ -443,94 +501,78 @@ def process_raw_move(data, sid_key):
         tid = data.get('id')
         x = float(data.get('x', 0))
         y = float(data.get('y', 0))
-        # Update touch
-        touch = st['touches'].get(tid)
+        if RAW_DEBUG:
+            try:
+                print(f"move id={tid} x={x:.1f} y={y:.1f}")
+            except Exception:
+                pass
+
+        touches = st['touches']
+        touch = touches.get(tid)
         dx = dy = 0.0
-        if touch:
-            dx = x - touch['lastX']
-            dy = y - touch['lastY']
+        if touch is not None:
+            lx = touch['lastX']
+            ly = touch['lastY']
+            dx = x - lx
+            dy = y - ly
             dist = math.hypot(dx, dy)
             touch['lastX'] = x
             touch['lastY'] = y
             touch['totalDistance'] += dist
-            # store recent per-touch deltas for multi-touch gesture aggregation
             touch['lastDeltaX'] = dx
             touch['lastDeltaY'] = dy
             if touch['totalDistance'] > 4:
                 touch['hasMoved'] = True
 
-        # Auto-release stale double-tap-hold to avoid stuck mouseDown state
-        try:
-            now_check = time.time() * 1000
-            if st.get('doubleTapHoldActive') and st.get('lastMouseDownTime', 0) and (now_check - st.get('lastMouseDownTime', 0) > DOUBLE_TAP_HOLD_TIMEOUT_MS):
+        # Auto-release stale double-tap-hold
+        now_check = time.time() * 1000
+        if st.get('doubleTapHoldActive') and st.get('lastMouseDownTime', 0) and (now_check - st.get('lastMouseDownTime', 0) > DOUBLE_TAP_HOLD_TIMEOUT_MS):
+            try:
+                pyautogui.mouseUp()
+            except Exception:
+                pass
+            st['doubleTapHoldActive'] = False
+            st['lastMouseDownTime'] = 0
+
+        # Handle double-tap-expect-hold
+        now_ms = now_check
+        if st.get('doubleTapExpectHold') and st.get('doubleTapDownTime', 0):
+            if (now_ms - st.get('doubleTapDownTime', 0)) >= DOUBLE_TAP_HOLD_TRIGGER_MS:
                 try:
-                    pyautogui.mouseUp()
+                    pyautogui.mouseDown()
                 except Exception:
                     pass
-                st['doubleTapHoldActive'] = False
-                st['lastMouseDownTime'] = 0
-        except Exception:
-            pass
+                st['doubleTapHoldActive'] = True
+                st['lastMouseDownTime'] = now_ms
+                st['lastMouseDownSid'] = sid_key
+                st['doubleTapExpectHold'] = False
 
-        # If the client initiated a double-tap and we're expecting the second-tap hold,
-        # check whether the hold threshold has been crossed and start dragging (mouseDown).
-        try:
-            now_ms = time.time() * 1000
-            if st.get('doubleTapExpectHold') and st.get('doubleTapDownTime', 0):
-                if (now_ms - st.get('doubleTapDownTime', 0)) >= DOUBLE_TAP_HOLD_TRIGGER_MS:
-                    try:
-                        pyautogui.mouseDown()
-                    except Exception:
-                        pass
-                    st['doubleTapHoldActive'] = True
-                    st['lastMouseDownTime'] = now_ms
-                    st['lastMouseDownSid'] = sid_key
-                    st['doubleTapExpectHold'] = False
-        except Exception:
-            pass
+        # Suppress tiny moves after right-click
+        if st.get('suppressMoveUntil', 0) > now_ms:
+            if touch is not None:
+                touch['lastDeltaX'] = 0.0
+                touch['lastDeltaY'] = 0.0
+            return
 
-        # If we've recently opened a context menu via right-click, ignore
-        # tiny movements for a short window so the menu doesn't close
-        # immediately due to a micro-move generated by the touch hardware.
-        try:
-            now_ms = time.time() * 1000
-            if st.get('suppressMoveUntil', 0) > now_ms:
-                # clear per-touch deltas so nothing is applied
-                if touch:
-                    touch['lastDeltaX'] = 0.0
-                    touch['lastDeltaY'] = 0.0
-                return
-        except Exception:
-            pass
-
-        # Decide behavior based on active touch count
-        n = len(st['touches'])
+        n = len(touches)
         if n == 1:
-            # single-finger -> cursor move
             process_move_delta(dx, dy)
-        elif n == 2:
-            # two-finger -> scroll; aggregate the recent per-touch vertical deltas
-            # (lastDeltaY) so we don't repeatedly re-apply a cumulative start->last
-            # distance on every move event. After consuming the deltas we zero them
-            # so each delta is applied only once.
+            return
+
+        if n == 2:
+            # Aggregate lastDeltaY across touches
             totalDelta = 0.0
+            speed_acc = 0.0
             count = 0
-            for td in st['touches'].values():
-                totalDelta += td.get('lastDeltaY', 0.0)
+            for td in touches.values():
+                ldy = td.get('lastDeltaY', 0.0)
+                totalDelta += ldy
+                speed_acc += abs(ldy)
                 count += 1
             if count:
                 avgDy = totalDelta / float(count)
-                # Compute a simple speed metric: average absolute delta magnitude
-                # across touches. Larger deltas mean a faster swipe.
-                speed = 0.0
-                for td in st['touches'].values():
-                    speed += abs(td.get('lastDeltaY', 0.0))
-                speed = speed / float(count)
-
-                # Apply acceleration multiplier based on speed. Cap to avoid
-                # excessive jumps from noisy input.
+                speed = speed_acc / float(count)
                 accel = 1.0 + min(SCROLL_ACCEL_CAP, speed) * SCROLL_ACCEL_FACTOR
-
                 scroll_val = -avgDy * SCROLL_MULTIPLIER * accel
                 with scroll_lock:
                     global scroll_accum_y
@@ -544,19 +586,20 @@ def process_raw_move(data, sid_key):
                             step = int(math.copysign(1, scroll_accum_y))
                             pyautogui.scroll(step)
                             scroll_accum_y -= step
-                # zero out consumed per-touch deltas so they aren't re-used
-                for td in st['touches'].values():
+                # zero out consumed per-touch deltas
+                for td in touches.values():
                     td['lastDeltaY'] = 0.0
-        elif n == 3:
-            # three-finger gesture: detect vertical average to trigger task view actions
+            return
+
+        if n == 3:
             avgDeltaY = 0.0
             count = 0
-            for k, td in st['touches'].items():
+            for td in touches.values():
                 avgDeltaY += (td['lastY'] - td['startY'])
                 count += 1
             if count:
-                avgDeltaY /= count
-                st['threeFingerAccumY'] += -avgDeltaY
+                avg = avgDeltaY / count
+                st['threeFingerAccumY'] += -avg
                 if not st['threeFingerTriggeredUp'] and st['threeFingerAccumY'] >= 12:
                     st['threeFingerTriggeredUp'] = True
                     try:
@@ -569,12 +612,18 @@ def process_raw_move(data, sid_key):
                         _press_single_key('esc')
                     except Exception:
                         pass
+            return
     except Exception as e:
         print('process_raw_move error', e)
 
 
 def process_raw_up(data, sid_key):
     try:
+        if RAW_DEBUG:
+            try:
+                print(f"up   id={data.get('id')} x={float(data.get('x', 0)):.1f} y={float(data.get('y', 0)):.1f}")
+            except Exception:
+                pass
         st = touch_state.setdefault(sid_key, {'touches': {}, 'threeFingerAccumY': 0.0, 'threeFingerTriggeredUp': False, 'threeFingerTriggeredDown': False, 'doubleTapHoldActive': False, 'suppressMoveUntil': 0, 'lastMouseDownTime': 0, 'lastMouseDownSid': None, 'lastTapTime': 0, 'pendingDoubleTap': False})
         tid = data.get('id')
         # If touch exists, determine if it was a tap (short duration, little movement)
@@ -662,6 +711,25 @@ def on_raw_up_socket(data):
         print('on_raw_up error', e)
 
 
+@socketio.on('raw.batch')
+def on_raw_batch_socket(events):
+    """Efficiently handle a batch of raw events sent in one socket message."""
+    try:
+        sid = request.sid
+        if not isinstance(events, list):
+            events = [events]
+        for ev in events:
+            etype = ev.get('type')
+            if etype == 'down':
+                process_raw_down(ev, sid)
+            elif etype == 'move':
+                process_raw_move(ev, sid)
+            elif etype == 'up':
+                process_raw_up(ev, sid)
+    except Exception as e:
+        print('on_raw_batch error', e)
+
+
 # Log socket connections for debugging
 @socketio.on('connect')
 def on_client_connect():
@@ -682,6 +750,23 @@ def on_client_disconnect():
     try:
         sid = request.sid
         print(f"Socket disconnected: sid={sid}")
+        # Clear any hold state for this client and release mouse if needed
+        try:
+            st = touch_state.get(sid)
+            if st and st.get('doubleTapHoldActive'):
+                try:
+                    pyautogui.mouseUp()
+                except Exception:
+                    pass
+                st['doubleTapHoldActive'] = False
+            if st:
+                st['lastMouseDownTime'] = 0
+                st['lastMouseDownSid'] = None
+                st['doubleTapExpectHold'] = False
+                st['pendingDoubleTap'] = False
+                st['touches'] = {}
+        except Exception:
+            pass
     except Exception as e:
         print('disconnect handler error', e)
 
@@ -1026,8 +1111,9 @@ if __name__ == '__main__':
     # Run with SocketIO so WebSocket support is enabled. If eventlet/gevent isn't installed
     # this will still work with the default development server for HTTP fallback.
     try:
-        socketio.run(app, host='0.0.0.0', port=51273, debug=True)
+        socketio.run(app, host='0.0.0.0', port=51273, debug=True, log_output=False)
     except Exception:
+        # request_handler can't be passed through here reliably, rely on the monkey-patch above
         app.run(host='0.0.0.0', port=51273, debug=True)
 
 

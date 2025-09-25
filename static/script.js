@@ -10,6 +10,12 @@ class PhoneTrackpad {
         this.socket = null;
         this.kbInput = document.getElementById('kbInput');
         this.kbToggle = document.getElementById('kbToggle');
+        // Config: scale finger positions by devicePixelRatio to amplify tiny motions
+        this.useDPRScale = true;
+        // Track active touches/pointers by id with latest absolute coordinates
+        this.activeContacts = new Map(); // id -> { id, x, y, pointerType, time }
+        this.streaming = false;
+        this._rafId = null;
         this.initSocket();
         this.initEventListeners();
         this.initKeyboardUI();
@@ -104,64 +110,132 @@ class PhoneTrackpad {
         this.trackpad.addEventListener('contextmenu', e => e.preventDefault());
 
         if (window.PointerEvent) {
-            this.trackpad.addEventListener('pointerdown', (e) => { this.emitRawDownPointer(e); }, { passive: false });
-            this.trackpad.addEventListener('pointermove', (e) => { this.emitRawMovePointer(e); }, { passive: false });
-            this.trackpad.addEventListener('pointerup', (e) => { this.emitRawUpPointer(e); }, { passive: false });
-            this.trackpad.addEventListener('pointercancel', (e) => { this.emitRawUpPointer(e); }, { passive: false });
+            this.trackpad.addEventListener('pointerdown', (e) => { this.onPointerDown(e); }, { passive: false });
+            this.trackpad.addEventListener('pointermove', (e) => { this.onPointerMove(e); }, { passive: false });
+            // Prefer raw updates if available (higher frequency); we still send immediately
+            this.trackpad.addEventListener('pointerrawupdate', (e) => { this.onPointerRawUpdate(e); }, { passive: false });
+            this.trackpad.addEventListener('pointerup', (e) => { this.onPointerUp(e); }, { passive: false });
+            this.trackpad.addEventListener('pointercancel', (e) => { this.onPointerUp(e); }, { passive: false });
         } else {
-            this.trackpad.addEventListener('touchstart', (e) => { this.emitRawTouchStart(e); }, { passive: false });
-            this.trackpad.addEventListener('touchmove', (e) => { this.emitRawTouchMove(e); }, { passive: false });
-            this.trackpad.addEventListener('touchend', (e) => { this.emitRawTouchEnd(e); }, { passive: false });
-            this.trackpad.addEventListener('touchcancel', (e) => { this.emitRawTouchEnd(e); }, { passive: false });
+            this.trackpad.addEventListener('touchstart', (e) => { this.onTouchStart(e); }, { passive: false });
+            this.trackpad.addEventListener('touchmove', (e) => { this.onTouchMove(e); }, { passive: false });
+            this.trackpad.addEventListener('touchend', (e) => { this.onTouchEnd(e); }, { passive: false });
+            this.trackpad.addEventListener('touchcancel', (e) => { this.onTouchEnd(e); }, { passive: false });
         }
     }
 
-    // Minimal pointer-based raw emission (uses coalesced events when available)
-    emitRawDownPointer(e) {
-        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
-        e.preventDefault();
-        const payload = { type: 'down', id: e.pointerId, x: e.pageX, y: e.pageY, pointerType: e.pointerType, time: Date.now() };
-        this._sendRaw(payload);
+    _scaleXY(x, y) {
+        const s = this.useDPRScale ? (window.devicePixelRatio || 1) : 1;
+        return { x: x * s, y: y * s };
     }
 
-    emitRawMovePointer(e) {
+    // PointerEvent handlers (we still emit 'down'/'up' immediately; 'move' is streamed)
+    onPointerDown(e) {
         if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
         e.preventDefault();
+        const now = Date.now();
+        const id = e.pointerId;
+        const scaled = this._scaleXY(e.pageX, e.pageY);
+        const pt = { id, x: scaled.x, y: scaled.y, pointerType: e.pointerType, time: now };
+        this.activeContacts.set(id, pt);
+        // Send down immediately
+        this._sendRaw({ type: 'down', ...pt });
+        this._ensureStreaming();
+    }
+
+    onPointerMove(e) {
+        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+        e.preventDefault();
+        const id = e.pointerId;
+        const now = Date.now();
+        // Prefer coalesced events for more samples in a single frame
         const events = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : [e];
         const batch = [];
         for (const ev of events) {
-            batch.push({ type: 'move', id: e.pointerId, x: ev.pageX || ev.clientX, y: ev.pageY || ev.clientY, pointerType: e.pointerType, time: Date.now() });
+            const ex = (ev.pageX != null ? ev.pageX : ev.clientX);
+            const ey = (ev.pageY != null ? ev.pageY : ev.clientY);
+            const scaled = this._scaleXY(ex, ey);
+            const pt = { id, x: scaled.x, y: scaled.y, pointerType: e.pointerType, time: now };
+            this.activeContacts.set(id, pt);
+            batch.push({ type: 'move', ...pt });
         }
-        this._sendRaw(batch);
+        if (batch.length) this._sendRaw(batch);
     }
 
-    emitRawUpPointer(e) {
+    onPointerRawUpdate(e) {
         if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
         e.preventDefault();
-        const payload = { type: 'up', id: e.pointerId, x: e.pageX, y: e.pageY, pointerType: e.pointerType, time: Date.now() };
-        this._sendRaw(payload);
+        const id = e.pointerId;
+        const now = Date.now();
+        const events = (typeof e.getCoalescedEvents === 'function') ? e.getCoalescedEvents() : [e];
+        const batch = [];
+        for (const ev of events) {
+            const ex = (ev.pageX != null ? ev.pageX : ev.clientX);
+            const ey = (ev.pageY != null ? ev.pageY : ev.clientY);
+            const scaled = this._scaleXY(ex, ey);
+            const pt = { id, x: scaled.x, y: scaled.y, pointerType: e.pointerType, time: now };
+            this.activeContacts.set(id, pt);
+            batch.push({ type: 'move', ...pt });
+        }
+        if (batch.length) this._sendRaw(batch);
+    }
+
+    onPointerUp(e) {
+        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+        e.preventDefault();
+        const now = Date.now();
+        const id = e.pointerId;
+        const scaled = this._scaleXY(e.pageX, e.pageY);
+        const pt = { id, x: scaled.x, y: scaled.y, pointerType: e.pointerType, time: now };
+        // Send up immediately
+        this._sendRaw({ type: 'up', ...pt });
+        this.activeContacts.delete(id);
+        this._maybeStopStreaming();
     }
 
     // Touch event fallbacks
-    emitRawTouchStart(e) {
+    onTouchStart(e) {
         e.preventDefault();
+        const now = Date.now();
         const batch = [];
-        for (const t of e.changedTouches) batch.push({ type: 'down', id: t.identifier, x: t.pageX, y: t.pageY, pointerType: 'touch', time: Date.now() });
-        this._sendRaw(batch);
+        for (const t of e.changedTouches) {
+            const id = t.identifier;
+            const scaled = this._scaleXY(t.pageX, t.pageY);
+            const pt = { id, x: scaled.x, y: scaled.y, pointerType: 'touch', time: now };
+            this.activeContacts.set(id, pt);
+            batch.push({ type: 'down', ...pt });
+        }
+        if (batch.length) this._sendRaw(batch);
+        this._ensureStreaming();
     }
 
-    emitRawTouchMove(e) {
+    onTouchMove(e) {
         e.preventDefault();
+        const now = Date.now();
         const batch = [];
-        for (const t of e.changedTouches) batch.push({ type: 'move', id: t.identifier, x: t.pageX, y: t.pageY, pointerType: 'touch', time: Date.now() });
-        this._sendRaw(batch);
+        for (const t of e.changedTouches) {
+            const id = t.identifier;
+            const scaled = this._scaleXY(t.pageX, t.pageY);
+            const pt = { id, x: scaled.x, y: scaled.y, pointerType: 'touch', time: now };
+            this.activeContacts.set(id, pt);
+            batch.push({ type: 'move', ...pt });
+        }
+        if (batch.length) this._sendRaw(batch);
     }
 
-    emitRawTouchEnd(e) {
+    onTouchEnd(e) {
         e.preventDefault();
+        const now = Date.now();
         const batch = [];
-        for (const t of e.changedTouches) batch.push({ type: 'up', id: t.identifier, x: t.pageX, y: t.pageY, pointerType: 'touch', time: Date.now() });
-        this._sendRaw(batch);
+        for (const t of e.changedTouches) {
+            const id = t.identifier;
+            const scaled = this._scaleXY(t.pageX, t.pageY);
+            const pt = { id, x: scaled.x, y: scaled.y, pointerType: 'touch', time: now };
+            batch.push({ type: 'up', ...pt });
+            this.activeContacts.delete(id);
+        }
+        if (batch.length) this._sendRaw(batch);
+        this._maybeStopStreaming();
     }
 
     // Core: send raw events via socket if available, otherwise POST to /raw
@@ -169,7 +243,8 @@ class PhoneTrackpad {
         if (this.socket && this.socket.connected) {
             try {
                 if (Array.isArray(eventOrArray)) {
-                    for (const ev of eventOrArray) this.socket.emit(`raw.${ev.type}`, ev);
+                    // Batch send as a single socket message for efficiency
+                    this.socket.emit('raw.batch', eventOrArray);
                 } else {
                     const ev = eventOrArray;
                     this.socket.emit(`raw.${ev.type}`, ev);
@@ -183,6 +258,39 @@ class PhoneTrackpad {
         // HTTP fallback: send array for efficiency
         const body = Array.isArray(eventOrArray) ? eventOrArray : [eventOrArray];
         fetch('/raw', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {});
+    }
+
+    // Ensure the streaming loop is running when we have one or more active contacts
+    _ensureStreaming() {
+        if (this.streaming) return;
+        this.streaming = true;
+        const tick = () => {
+            if (!this.streaming) return;
+            if (this.activeContacts.size === 0) {
+                this.streaming = false;
+                this._rafId = null;
+                return;
+            }
+            const now = Date.now();
+            const batch = [];
+            for (const pt of this.activeContacts.values()) {
+                // Always send latest known positions while touching
+                batch.push({ type: 'move', id: pt.id, x: pt.x, y: pt.y, pointerType: pt.pointerType, time: now });
+            }
+            if (batch.length) this._sendRaw(batch);
+            this._rafId = (window.requestAnimationFrame || function (cb) { return setTimeout(cb, 16); })(tick);
+        };
+        tick();
+    }
+
+    _maybeStopStreaming() {
+        if (this.activeContacts.size === 0 && this.streaming) {
+            this.streaming = false;
+            if (this._rafId) {
+                (window.cancelAnimationFrame || clearTimeout)(this._rafId);
+                this._rafId = null;
+            }
+        }
     }
 
     // Simple visual touch feedback (kept for UX)
@@ -200,7 +308,5 @@ window.addEventListener('DOMContentLoaded', () => {
     const tp = new PhoneTrackpad();
     // Expose for debugging/tweaks from console
     window.phoneTrackpad = tp;
-    // Optional: warm up and indicate connectivity
-    tp.checkConnection().catch(() => {});
 });
 

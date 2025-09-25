@@ -117,6 +117,18 @@ You can modify the following in `app.py`:
 
 The web interface can be customized by editing the HTML, CSS, and JavaScript files in the `templates` and `static` directories.
 
+### Mouse acceleration (new)
+
+The server now supports speed-based mouse acceleration. By default the following constants are defined in `app.py` and can be tuned:
+
+- `MOVE_MULTIPLIER`: baseline multiplier applied to incoming client deltas (existing)
+- `BASE_SPEED_SCALE`: baseline multiplier applied regardless of speed
+- `ACCELERATION_FACTOR`: scales the measured speed before applying the curve
+- `ACCEL_EXPONENT`: exponent used for the acceleration curve (values >1 increase acceleration)
+- `ACCEL_CAP`: maximum allowed acceleration multiplier to avoid runaway cursor jumps
+
+Recommended tuning: reduce `MOVE_MULTIPLIER` if the cursor feels too sensitive at low speeds. Increase `ACCELERATION_FACTOR` or `ACCEL_EXPONENT` to make fast swipes move the cursor much further. Keep `ACCEL_CAP` modest (2-8) to avoid overshooting. Restart the server after editing `app.py`.
+
 ## System Requirements
 
 - Python 3.7+
