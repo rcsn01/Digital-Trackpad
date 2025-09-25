@@ -2,7 +2,7 @@
 
 ## 📋 Executive Summary
 
-This plan outlines comprehensive improvements for the Digital-Trackpad project, including product functionality optimization, user experience enhancement, technical architecture upgrades, and market competitiveness strengthening. The core improvement projects are expected to be completed within 6 months, significantly enhancing product competitiveness.
+This plan outlines comprehensive improvements for the Digital-Trackpad project, including product functionality optimization, user experience enhancement, technical architecture upgrades, and market competitiveness strengthening. The core improvement projects are expected to be completed within 8 months, significantly enhancing product competitiveness.
 
 ---
 
